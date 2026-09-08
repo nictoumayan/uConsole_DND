@@ -114,6 +114,14 @@ fn draw_status(f: &mut Frame, app: &App, area: Rect) {
         } else if r.is_nat1() {
             spans.push(Span::styled("  NAT 1", theme::danger()));
         }
+        // Why it resolved that way. A roll that silently changes itself is
+        // worse than one you have to think about.
+        if !app.last_resolution.is_empty() {
+            spans.push(Span::styled(
+                format!("   {}", app.last_resolution.join("; ")),
+                theme::dim(),
+            ));
+        }
         lines.push(Line::from(spans));
     }
 
@@ -318,6 +326,29 @@ fn draw_vitals(f: &mut Frame, app: &App, area: Rect, portrait: Option<&Portrait>
         lines.push(Line::styled(chunk.join("  "), theme::base()));
     }
     lines.push(Line::from(""));
+
+    // Speed comes from the rules engine, not the sheet: exhaustion and several
+    // conditions change it during play.
+    let speed = app.effective_speed();
+    let speed_style = if speed == s.walking_speed { theme::base() } else { theme::danger() };
+    lines.push(Line::styled(
+        if speed == s.walking_speed {
+            format!("Speed {speed} ft")
+        } else {
+            format!("Speed {speed} ft  (base {})", s.walking_speed)
+        },
+        speed_style,
+    ));
+    if let Some(sc) = &s.spellcasting {
+        lines.push(Line::styled(
+            format!("Spell DC {}  atk {:+}  {}", sc.save_dc, sc.attack_bonus, sc.ability.abbrev()),
+            theme::base(),
+        ));
+    }
+    if app.is_incapacitated() {
+        lines.push(Line::styled("INCAPACITATED", theme::danger()));
+    }
+
     for (sense, range) in &s.senses {
         lines.push(Line::styled(format!("{} {} ft", cap(sense), range), theme::base()));
     }
@@ -471,10 +502,63 @@ fn draw_conditions(f: &mut Frame, app: &App, area: Rect) {
     // Two columns: fifteen rows will not fit fifteen rows of content plus a
     // border on a 22-row panel.
     let half = lines.len().div_ceil(2);
-    let [left, right] = Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .areas(inner);
+    let [top, bottom] =
+        Layout::vertical([Constraint::Min(3), Constraint::Length(3)]).areas(inner);
+    let [left, right] =
+        Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)]).areas(top);
     f.render_widget(Paragraph::new(lines[..half].to_vec()), left);
     f.render_widget(Paragraph::new(lines[half..].to_vec()), right);
+
+    // What the condition under the cursor actually does, including the parts
+    // the app deliberately will not decide for you.
+    let mut detail: Vec<Line> = Vec::new();
+    if !app.on_exhaustion_row() {
+        let name = CONDITIONS[app.condition_cursor];
+        let e = crate::rules::effects(name);
+        let mut bits: Vec<String> = Vec::new();
+        if e.attack == crate::rules::Disposition::Disadvantage {
+            bits.push("disadvantage on attacks".into());
+        }
+        if e.attack == crate::rules::Disposition::Advantage {
+            bits.push("advantage on attacks".into());
+        }
+        if e.ability_check == crate::rules::Disposition::Disadvantage {
+            bits.push("disadvantage on ability checks".into());
+        }
+        if !e.save_auto_fail.is_empty() {
+            bits.push(format!(
+                "auto-fails {} saves",
+                e.save_auto_fail.iter().map(|a| a.abbrev()).collect::<Vec<_>>().join("/")
+            ));
+        }
+        if !e.save_disadvantage.is_empty() {
+            bits.push(format!(
+                "disadvantage on {} saves",
+                e.save_disadvantage.iter().map(|a| a.abbrev()).collect::<Vec<_>>().join("/")
+            ));
+        }
+        if e.speed_zero {
+            bits.push("speed 0".into());
+        }
+        if e.incapacitated {
+            bits.push("incapacitated".into());
+        }
+        detail.push(Line::styled(bits.join(" · "), theme::bright()));
+        if !e.note.is_empty() {
+            detail.push(Line::styled(e.note, theme::dim()));
+        }
+    } else {
+        detail.push(Line::styled(
+            format!(
+                "{} to every d20 test, -{} ft speed",
+                crate::rules::exhaustion_penalty(app.session.exhaustion),
+                crate::rules::exhaustion_speed_penalty(app.session.exhaustion)
+            ),
+            theme::bright(),
+        ));
+        detail.push(Line::styled("level 6 is death", theme::dim()));
+    }
+    f.render_widget(Paragraph::new(detail).wrap(Wrap { trim: true }), bottom);
 }
 
 fn draw_roll_log(f: &mut Frame, app: &App, area: Rect) {

@@ -142,8 +142,10 @@ fn the_status_bar_grows_a_row_only_when_there_is_something_to_say() {
 #[test]
 fn dying_is_impossible_to_miss() {
     let mut a = app();
+    // Exactly lethal, not overkill: enough remainder is instant death.
+    let exact: Vec<KeyCode> = a.current_hp().to_string().chars().map(KeyCode::Char).collect();
     keys(&mut a, &[KeyCode::Char('d')]);
-    keys(&mut a, &[KeyCode::Char('9'), KeyCode::Char('9')]);
+    keys(&mut a, &exact);
     keys(&mut a, &[KeyCode::Enter]);
 
     let s = screen(&mut a);

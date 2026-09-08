@@ -75,6 +75,11 @@ impl Tab {
 pub struct RollSpec {
     pub modifier: i32,
     pub kind: RollKind,
+    /// Which ability the test is made with, so conditions that hamper (say)
+    /// Dexterity saves can find it.
+    pub ability: Option<crate::derive::tables::Ability>,
+    /// Skill slug, for standing advantages like "stealth".
+    pub skill: Option<&'static str>,
 }
 
 /// A limited-use resource attached to a row.
@@ -142,13 +147,15 @@ impl Row {
         snippet: impl Into<String>,
         modifier: i32,
         kind: RollKind,
+        ability: Option<crate::derive::tables::Ability>,
+        skill: Option<&'static str>,
     ) -> Row {
         Row {
             name: name.into(),
             meta: meta.into(),
             snippet: snippet.into(),
             detail: String::new(),
-            roll: Some(RollSpec { modifier, kind }),
+            roll: Some(RollSpec { modifier, kind, ability, skill }),
             uses: None,
         }
     }
@@ -182,6 +189,8 @@ fn rollables(sheet: &Sheet) -> Vec<Row> {
         format!("{:+}", sheet.initiative.value),
         sheet.initiative.value,
         RollKind::Initiative,
+        Some(crate::derive::tables::Ability::Dex),
+        None,
     )];
 
     for save in &sheet.saves {
@@ -191,10 +200,20 @@ fn rollables(sheet: &Sheet) -> Vec<Row> {
             format!("{:+}", save.value),
             save.value,
             RollKind::Save,
+            crate::derive::tables::Ability::ALL
+                .iter()
+                .copied()
+                .find(|a| a.abbrev() == save.name),
+            None,
         ));
     }
 
-    for skill in &sheet.skills {
+    // Walk the rules table rather than the derived list, so each row carries
+    // the slug and governing ability the rules engine needs.
+    for (slug, name, ability) in crate::derive::tables::SKILLS.iter() {
+        let Some(skill) = sheet.skills.iter().find(|s| s.name == *name) else {
+            continue;
+        };
         // Must fit the 14-column meta chip; "check · expertise" did not.
         let meta = if skill.expertise {
             "expertise"
@@ -204,11 +223,13 @@ fn rollables(sheet: &Sheet) -> Vec<Row> {
             "check"
         };
         out.push(Row::rollable(
-            &skill.name,
+            *name,
             meta,
             format!("{:+}", skill.value),
             skill.value,
             RollKind::Check,
+            Some(*ability),
+            Some(slug),
         ));
     }
 
@@ -218,9 +239,12 @@ fn rollables(sheet: &Sheet) -> Vec<Row> {
         "d20, no modifier",
         0,
         RollKind::DeathSave,
+        None,
+        None,
     ));
     out
 }
+
 
 fn actions(ch: &Character) -> Vec<Row> {
     let mut out = Vec::new();

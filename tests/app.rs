@@ -29,6 +29,15 @@ fn press(a: &mut App, c: KeyCode) {
     keys::handle(a, c, KeyModifiers::NONE);
 }
 
+/// Drop to exactly 0 hit points without triggering the massive-damage rule,
+/// which kills outright when the remainder reaches your maximum.
+fn drop_to_zero(a: &mut App) {
+    let exact = a.current_hp().to_string();
+    press(a, KeyCode::Char('d'));
+    typed(a, &exact);
+    press(a, KeyCode::Enter);
+}
+
 /// Press the digit that jumps to `tab`. Naming the tab rather than hardcoding
 /// its digit means inserting a tab cannot silently retarget a test.
 fn go(a: &mut App, tab: Tab) {
@@ -380,9 +389,7 @@ fn death_save_keys_are_bound_only_while_dying() {
     assert_eq!(a.session.death_successes, 0);
     assert_eq!(a.session.death_failures, 0);
 
-    press(&mut a, KeyCode::Char('d'));
-    typed(&mut a, "999");
-    press(&mut a, KeyCode::Enter);
+    drop_to_zero(&mut a);
     assert!(a.is_dying());
 
     press(&mut a, KeyCode::Char('s'));
@@ -525,9 +532,7 @@ fn a_death_save_applies_itself() {
     // Rolling one and then recording it by hand is double-entry that gets
     // skipped mid-fight.
     let mut a = seeded();
-    press(&mut a, KeyCode::Char('d'));
-    typed(&mut a, "999");
-    press(&mut a, KeyCode::Enter);
+    drop_to_zero(&mut a);
     assert!(a.is_dying());
 
     go(&mut a, Tab::Roll);

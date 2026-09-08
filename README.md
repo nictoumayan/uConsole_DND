@@ -85,6 +85,7 @@ src/
 ├── content.rs      payload -> uniform tab rows, + HTML-to-text
 ├── tabs.rs         the 22-row tabbed layout and detail overlay
 ├── portrait.rs     avatar -> amber half-blocks
+├── rules.rs        2024 mechanics: conditions, exhaustion, advantage resolution
 ├── dice.rs         PCG32, dice expressions, advantage
 ├── session.rs      mutable play state, its own file, never the snapshot
 ├── device.rs       uConsole panel simulation (80x22) + amber palette
@@ -167,7 +168,8 @@ play
   d              damage      type a number, enter to apply
   h              heal        "
   t              temp hp     "
-  c              conditions overlay          i    inspiration
+  c              conditions overlay (shows what each one does)
+  i              inspiration
   o              correct ability scores by hand
   u / U          spend / restore one limited use
   r              rest — short or long
@@ -221,6 +223,49 @@ A short rest restores only what recharges on one; a long rest restores
 everything. The recharge type is stored **alongside** the count in the session
 rather than looked up from the snapshot, so a rest works from the session alone
 and a re-import can never orphan the bookkeeping.
+
+## The rules engine
+
+`src/rules.rs` holds the 2024 mechanics that turn a sheet into rolls. It is
+deliberately separate from `derive`: `derive` answers "what are this
+character's numbers", `rules` answers "what happens when they roll". Keeping
+them apart is what stops the sheet and the dice disagreeing.
+
+**The advantage you ask for is a request, not an instruction.** Pressing `a`
+adds one source; the engine also folds in the character's standing advantages,
+every condition in play, and exhaustion, then applies the cancellation rule:
+
+> If circumstances cause a roll to have both Advantage and Disadvantage, the
+> roll has neither of them, and you roll one d20.
+
+So being Poisoned and pressing `a` correctly produces a **straight roll**, and
+the footer says `cancelled by Poisoned`. That is the case people get wrong at a
+table, and it is the reason this module exists.
+
+Standing advantages come from the sheet without being asked. Rihanne's class
+grants advantage on Initiative, so rolling it shows `adv: initiative` with no
+keypress.
+
+What it models:
+
+- **Exhaustion**: -2 on every d20 test per level and -5 ft of Speed per level,
+  applied to attacks, checks, saves, initiative and death saves alike
+- **All 15 conditions**, with their real effects on attacks, ability checks and
+  specific saving throws, including automatic failures
+- **Initiative is a Dexterity check** in the 2024 rules, so anything that
+  hampers ability checks hampers initiative — easy to miss by hand
+- **Speed** after exhaustion, and zero while Grappled, Restrained, Paralyzed,
+  Stunned, Unconscious or Petrified
+- **Massive damage**: damage that zeroes you with a remainder at or above your
+  hit point maximum kills outright, no death saves
+- **Unarmored Defense** for Barbarian and Monk, with the shield rule
+- **Spell save DC** and spell attack bonus
+- Carrying capacity, and whether you are incapacitated
+
+What it deliberately does **not** decide: whether you can see the source of
+your fear, whether the attacker is within five feet, whether a check relies on
+sight. Those surface as a note in the conditions overlay so you make the
+ruling, rather than the app pretending to.
 
 ## Dice
 
@@ -329,7 +374,7 @@ aesthetic, not a defect.
 
 ## Testing
 
-149 tests, and the interaction model is the point of the architecture: `app/state.rs`
+168 tests, and the interaction model is the point of the architecture: `app/state.rs`
 and `app/keys.rs` depend on neither ratatui nor a terminal, so every key a player
 can press is exercised headlessly — selection memory across tabs, filter scoping,
 the escape ladder, clamping when a filter shrinks the list under the cursor.
@@ -397,6 +442,8 @@ truecolor ANSI instead.
       roll log, and self-applying death saves
 - [x] **Limited uses** — charges on actions, spells and items, restored by the
       right kind of rest
+- [x] **Rules engine** — conditions, exhaustion, advantage resolution, speed,
+      unarmored defense, spell DC, massive damage
 - [ ] **Phase 3** — session layer: HP, conditions, death saves, local overrides
 The snapshot is immutable and session state lives in a separate file, so
 re-importing after a level-up never clobbers HP you are tracking mid-combat.
@@ -425,6 +472,7 @@ risks are in [docs/sync.md](docs/sync.md).
 
 ## Content
 
-Rules constants in `derive/tables.rs` are SRD 5.2.1 (CC-BY-4.0). Character
+Rules constants in `derive/tables.rs` and the mechanics in `rules.rs` are
+SRD 5.2.1 (CC-BY-4.0), Wizards of the Coast. Character
 snapshots are **not** — they embed non-SRD rules text and must never be
 committed. See `tests/fixtures/README.md`.

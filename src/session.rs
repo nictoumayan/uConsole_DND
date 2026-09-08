@@ -156,7 +156,20 @@ impl Session {
         let absorbed = amount.min(self.temporary_hp);
         self.temporary_hp -= absorbed;
         let rest = amount - absorbed;
+
+        // "When damage reduces a character to 0 Hit Points and damage remains,
+        // the character dies if the remainder equals or exceeds their Hit Point
+        // maximum." Instant death, no saves.
+        let massive = crate::rules::is_massive_damage(rest, self.current_hp(max_hp), max_hp);
+
         self.damage = (self.damage + rest).min(max_hp);
+
+        if massive {
+            self.death_successes = 0;
+            self.death_failures = 3;
+            self.add_condition("Unconscious");
+            return;
+        }
 
         if self.current_hp(max_hp) == 0 {
             // Dropping to zero ends any prior death-save progress and knocks

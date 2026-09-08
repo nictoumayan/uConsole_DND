@@ -73,11 +73,31 @@ pub struct StatEntry {
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Race {
+    pub weight_speeds: Option<WeightSpeeds>,
     #[serde(deserialize_with = "nullable")]
     pub full_name: String,
     #[serde(deserialize_with = "nullable")]
     pub base_race_name: String,
     pub racial_traits: Vec<RacialTrait>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct WeightSpeeds {
+    pub normal: Option<Speeds>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct Speeds {
+    #[serde(deserialize_with = "nullable")]
+    pub walk: i32,
+    #[serde(deserialize_with = "nullable")]
+    pub fly: i32,
+    #[serde(deserialize_with = "nullable")]
+    pub swim: i32,
+    #[serde(deserialize_with = "nullable")]
+    pub climb: i32,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -115,6 +135,8 @@ pub struct Class {
 pub struct NamedDefinition {
     #[serde(deserialize_with = "nullable")]
     pub name: String,
+    /// 1=STR .. 6=CHA. Absent on classes that do not cast.
+    pub spell_casting_ability_id: Option<i32>,
     /// Present on a class definition: every feature the class ever gets, at
     /// all 20 levels. Must be filtered by `required_level`.
     pub class_features: Vec<ClassFeature>,

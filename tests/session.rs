@@ -351,3 +351,26 @@ fn ability_overrides_survive_a_round_trip() {
     assert_eq!(back.ability_override("WIS"), Some(16));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn massive_damage_kills_outright() {
+    // "When damage reduces a character to 0 Hit Points and damage remains, the
+    // character dies if the remainder equals or exceeds their Hit Point
+    // maximum." No saves, no dying — dead.
+    let mut s = fresh();
+    s.take_damage(MAX * 2, MAX);
+    assert!(s.is_dead(), "a hit for double max hp should not leave you dying");
+    assert!(!s.is_dying(MAX));
+
+    // Exactly enough to zero you but not enough remainder is survivable.
+    let mut t = fresh();
+    t.take_damage(MAX, MAX);
+    assert!(t.is_dying(MAX), "exactly lethal damage should leave you dying");
+    assert!(!t.is_dead());
+
+    // Wounded first, so the remainder is what counts, not the raw number.
+    let mut u = fresh();
+    u.take_damage(20, MAX);          // at 35 of 55
+    u.take_damage(35 + MAX - 1, MAX); // remainder one short of max
+    assert!(u.is_dying(MAX), "remainder below max should not kill outright");
+}

@@ -5,6 +5,7 @@
 //! testable headlessly, which matters when the target hardware is in the post.
 
 use crate::content::{rows_for, RollKind, Row, Tab};
+use crate::rules;
 use crate::dice::{self, Advantage, Expr, Rng, Roll};
 use crate::ddb::Character;
 use crate::derive::{tables::Ability, Sheet};
@@ -85,6 +86,9 @@ pub struct App {
     pub dice_error: Option<String>,
     /// Cursor in the ability-override overlay.
     pub ability_cursor: usize,
+    /// Why the last roll came out the way it did — conditions, exhaustion,
+    /// cancellation. Shown so a roll never silently changes itself.
+    pub last_resolution: Vec<String>,
 }
 
 /// How many rolls the log keeps.
@@ -112,6 +116,7 @@ impl App {
             dice_buffer: String::new(),
             dice_error: None,
             ability_cursor: 0,
+            last_resolution: Vec::new(),
         }
     }
 
@@ -132,9 +137,13 @@ impl App {
         self.rolls.truncate(ROLL_LOG_CAP);
     }
 
-    /// Roll whatever the cursor is on. Death saves also apply themselves —
-    /// rolling one and then having to record it by hand is the kind of
-    /// double-entry that gets skipped mid-fight.
+    /// Roll whatever the cursor is on.
+    ///
+    /// The advantage you ask for is a *request*, not an instruction: the rules
+    /// engine folds in the character's standing advantages, every condition in
+    /// play, and exhaustion, then applies the cancellation rule. Being Poisoned
+    /// and pressing `a` correctly produces a straight roll, which is exactly
+    /// the case people get wrong at a table.
     pub fn roll_selected(&mut self, advantage: Advantage) {
         if self.tab != Tab::Roll {
             return;
@@ -142,7 +151,29 @@ impl App {
         let Some(row) = self.selected_row() else { return };
         let Some(spec) = row.roll else { return };
 
-        let result = dice::roll(&mut self.rng, &row.name, Expr::d20(spec.modifier), advantage);
+        let kind = match spec.kind {
+            RollKind::Initiative => rules::TestKind::Initiative,
+            RollKind::DeathSave => rules::TestKind::DeathSave,
+            RollKind::Save => rules::TestKind::Save {
+                ability: spec.ability.unwrap_or(Ability::Dex),
+            },
+            RollKind::Check => rules::TestKind::Check {
+                ability: spec.ability.unwrap_or(Ability::Dex),
+                skill: spec.skill,
+            },
+        };
+
+        let res = rules::resolve(
+            kind,
+            &self.session.conditions,
+            self.session.exhaustion,
+            &self.sheet.advantages,
+            advantage,
+        );
+        self.last_resolution = res.sources.clone();
+
+        let expr = Expr::d20(spec.modifier + res.penalty);
+        let result = dice::roll(&mut self.rng, &row.name, expr, res.advantage);
 
         if spec.kind == RollKind::DeathSave {
             // A natural 20 on a death save brings you back with one hit point;
@@ -200,6 +231,19 @@ impl App {
 
     pub fn open_roll_log(&mut self) {
         self.mode = Mode::RollLog;
+    }
+
+    /// Walking speed after exhaustion and any condition that pins you down.
+    pub fn effective_speed(&self) -> i32 {
+        rules::effective_speed(
+            self.sheet.walking_speed,
+            self.session.exhaustion,
+            &self.session.conditions,
+        )
+    }
+
+    pub fn is_incapacitated(&self) -> bool {
+        rules::is_incapacitated(&self.session.conditions)
     }
 
     // -- ability overrides -------------------------------------------------

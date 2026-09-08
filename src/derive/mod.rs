@@ -77,6 +77,19 @@ pub struct Sheet {
     pub conditionals: Vec<Conditional>,
     pub class_notes: Vec<String>,
     pub inspiration: bool,
+    /// Base walking speed before exhaustion or conditions. `rules` applies
+    /// those, because they change during play and this does not.
+    pub walking_speed: i32,
+    /// Present only for a class that casts.
+    pub spellcasting: Option<Spellcasting>,
+    pub carrying_capacity: i32,
+}
+
+#[derive(Debug, Clone)]
+pub struct Spellcasting {
+    pub ability: Ability,
+    pub save_dc: i32,
+    pub attack_bonus: i32,
 }
 
 impl Sheet {
@@ -126,7 +139,12 @@ pub fn derive_with(ch: &Character, overrides: &AbilityOverrides) -> Sheet {
     let mod_of = |a: Ability| scores[a.index()].modifier;
 
     let hp = derive_hp(ch, total_level, mod_of(Ability::Con));
-    let armor_class = derive_ac(ch, mod_of(Ability::Dex));
+    let armor_class = derive_ac(
+        ch,
+        mod_of(Ability::Dex),
+        mod_of(Ability::Con),
+        mod_of(Ability::Wis),
+    );
 
     let init_bonus = sum(ch, "bonus", "initiative");
     let initiative = Derived::new(
@@ -189,7 +207,32 @@ pub fn derive_with(ch: &Character, overrides: &AbilityOverrides) -> Sheet {
         conditionals: derive_conditionals(ch),
         class_notes,
         inspiration: ch.inspiration,
+        walking_speed: ch
+            .race
+            .weight_speeds
+            .as_ref()
+            .and_then(|w| w.normal.as_ref())
+            .map(|n| n.walk)
+            .filter(|w| *w > 0)
+            .unwrap_or(30),
+        spellcasting: derive_spellcasting(ch, pb, &scores),
+        carrying_capacity: crate::rules::carrying_capacity(scores[Ability::Str.index()].score),
     }
+}
+
+fn derive_spellcasting(ch: &Character, pb: i32, scores: &[Score; 6]) -> Option<Spellcasting> {
+    // 1=STR .. 6=CHA, the same ordering as `stats`.
+    let id = ch
+        .classes
+        .iter()
+        .find_map(|c| c.definition.spell_casting_ability_id)?;
+    let ability = *Ability::ALL.get((id - 1).max(0) as usize)?;
+    let m = scores[ability.index()].modifier;
+    Some(Spellcasting {
+        ability,
+        save_dc: crate::rules::spell_save_dc(pb, m),
+        attack_bonus: crate::rules::spell_attack_bonus(pb, m),
+    })
 }
 
 fn derive_scores(ch: &Character, overrides: &AbilityOverrides) -> [Score; 6] {
@@ -255,7 +298,7 @@ fn derive_hp(ch: &Character, total_level: i32, con_mod: i32) -> Hp {
     }
 }
 
-fn derive_ac(ch: &Character, dex_mod: i32) -> Derived {
+fn derive_ac(ch: &Character, dex_mod: i32, con_mod: i32, wis_mod: i32) -> Derived {
     let equipped: Vec<_> = ch.inventory.iter().filter(|i| i.equipped).collect();
 
     // `armorClass` is present on shields too, so the item's `type` is what
@@ -263,6 +306,29 @@ fn derive_ac(ch: &Character, dex_mod: i32) -> Derived {
     let body = equipped
         .iter()
         .find(|i| i.definition.kind.ends_with("Armor") && i.definition.armor_class.is_some());
+
+    // Unarmored Defense replaces the base entirely, and only applies when you
+    // are wearing no armour.
+    if body.is_none() {
+        for class in &ch.classes {
+            if let Some((ac, formula)) =
+                crate::rules::unarmored_defense(&class.definition.name, dex_mod, con_mod, wis_mod)
+            {
+                let shield = equipped
+                    .iter()
+                    .find(|i| i.definition.kind.eq_ignore_ascii_case("Shield"));
+                // A Barbarian may add a shield; a Monk may not.
+                let allow_shield = class.definition.name.eq_ignore_ascii_case("barbarian");
+                return match (shield, allow_shield) {
+                    (Some(s), true) => {
+                        let b = s.definition.armor_class.unwrap_or(2);
+                        Derived::new(ac + b, format!("{formula} + {} {b:+}", s.definition.name))
+                    }
+                    _ => Derived::new(ac, formula),
+                };
+            }
+        }
+    }
 
     let (mut ac, mut formula) = match body {
         Some(item) => {
@@ -301,9 +367,6 @@ fn derive_ac(ch: &Character, dex_mod: i32) -> Derived {
         formula.push_str(&format!(" + modifiers {misc:+}"));
     }
 
-    // TODO(phase 3): unarmored-armor-class (Monk, Barbarian) is a different
-    // formula entirely and is not modelled. Rihanne wears leather, so this is
-    // not on the critical path.
     Derived::new(ac, formula)
 }
 
