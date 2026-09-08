@@ -389,6 +389,16 @@ Building on-device works but a cold build is 15+ minutes on a CM4. Run it inside
 come free and hardware-accelerated, and at the uConsole's ~294 PPI a bitmap font
 at 2x is razor sharp.
 
+## Writing changes back to D&D Beyond
+
+Not built, and not straightforward. Google OAuth is not a path — Google is the
+identity provider *to* D&D Beyond, and there is no third-party OAuth flow at
+D&D Beyond to grant an application access to your characters. The only write
+path is reverse-engineered, authenticated with the browser session cookie.
+
+The analysis, the verified auth mechanism, a design that would work, and the
+risks are in [docs/sync.md](docs/sync.md).
+
 ## Content
 
 Rules constants in `derive/tables.rs` are SRD 5.2.1 (CC-BY-4.0). Character
