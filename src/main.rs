@@ -218,7 +218,6 @@ fn load_portrait(id: i64, cols: usize, rows: usize) -> Option<Portrait> {
 fn cmd_tui(id_arg: Option<&str>) -> Result<()> {
     let id = resolve_id(id_arg)?;
     let ch = load(id)?;
-    let sheet = derive::derive(&ch);
     let portrait = load_portrait(id, 20, 8);
 
     paths::ensure_dir()?;
@@ -233,6 +232,8 @@ fn cmd_tui(id_arg: Option<&str>) -> Result<()> {
         ch.inspiration,
     );
 
+    // Derive with the player's corrections applied, not without them.
+    let sheet = derive::derive_with(&ch, &session.ability_overrides);
     app::run(App::new(sheet, ch, session, session_path), portrait)
 }
 
@@ -255,7 +256,16 @@ fn cmd_show(args: &[String]) -> Result<()> {
     let opts = parse_show_args(args)?;
     let id = resolve_id(opts.id.as_deref())?;
     let ch: Character = load(id)?;
-    let derived = derive::derive(&ch);
+    // `show` must agree with `tui`. Deriving without the session's ability
+    // corrections would print a different sheet from the one you interact with.
+    let session = Session::load_or_seed(
+        &paths::session_path(id)?,
+        id,
+        ch.removed_hit_points,
+        ch.temporary_hit_points,
+        ch.inspiration,
+    );
+    let derived = derive::derive_with(&ch, &session.ability_overrides);
 
     // Tabbed layout when a tab is named; the flat sheet otherwise.
     let sheet = match opts.tab {

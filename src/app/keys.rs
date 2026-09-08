@@ -43,6 +43,18 @@ pub fn handle(app: &mut App, code: KeyCode, mods: KeyModifiers) {
             _ => {}
         },
 
+        Mode::Abilities => match code {
+            KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('o') => app.escape(),
+            KeyCode::Char('j') | KeyCode::Down => app.move_ability_cursor(1),
+            KeyCode::Char('k') | KeyCode::Up => app.move_ability_cursor(-1),
+            KeyCode::Char('+') | KeyCode::Char('=') | KeyCode::Right => app.adjust_ability(1),
+            KeyCode::Char('-') | KeyCode::Left => app.adjust_ability(-1),
+            KeyCode::Char('0') | KeyCode::Backspace | KeyCode::Delete => {
+                app.clear_ability_override()
+            }
+            _ => {}
+        },
+
         Mode::RollLog => match code {
             KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('l') => app.escape(),
             _ => {}
@@ -102,6 +114,7 @@ pub fn handle(app: &mut App, code: KeyCode, mods: KeyModifiers) {
             KeyCode::Char('u') => app.spend_use(),
             KeyCode::Char('U') => app.restore_use(),
             KeyCode::Char('l') => app.open_roll_log(),
+            KeyCode::Char('o') => app.open_abilities(),
 
             // Play state. These work from any tab — mid-combat you should not
             // have to navigate somewhere before you can take damage.

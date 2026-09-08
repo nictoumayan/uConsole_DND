@@ -7,7 +7,7 @@
 use crate::content::{rows_for, RollKind, Row, Tab};
 use crate::dice::{self, Advantage, Expr, Rng, Roll};
 use crate::ddb::Character;
-use crate::derive::Sheet;
+use crate::derive::{tables::Ability, Sheet};
 use crate::session::{Session, CONDITIONS};
 use std::path::PathBuf;
 
@@ -29,6 +29,8 @@ pub enum Mode {
     Dice,
     /// The roll log, full-screen.
     RollLog,
+    /// Correcting ability scores by hand.
+    Abilities,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,6 +83,8 @@ pub struct App {
     pub rolls: Vec<Roll>,
     pub dice_buffer: String,
     pub dice_error: Option<String>,
+    /// Cursor in the ability-override overlay.
+    pub ability_cursor: usize,
 }
 
 /// How many rolls the log keeps.
@@ -107,6 +111,7 @@ impl App {
             rolls: Vec::new(),
             dice_buffer: String::new(),
             dice_error: None,
+            ability_cursor: 0,
         }
     }
 
@@ -195,6 +200,48 @@ impl App {
 
     pub fn open_roll_log(&mut self) {
         self.mode = Mode::RollLog;
+    }
+
+    // -- ability overrides -------------------------------------------------
+
+    pub fn open_abilities(&mut self) {
+        self.ability_cursor = 0;
+        self.mode = Mode::Abilities;
+    }
+
+    pub fn move_ability_cursor(&mut self, delta: isize) {
+        let n = Ability::ALL.len() as isize;
+        self.ability_cursor = ((self.ability_cursor as isize + delta).rem_euclid(n)) as usize;
+    }
+
+    fn cursor_ability(&self) -> Ability {
+        Ability::ALL[self.ability_cursor.min(Ability::ALL.len() - 1)]
+    }
+
+    /// Nudge the score at the cursor. The first nudge seeds the override from
+    /// whatever was computed, so you adjust from the current number rather
+    /// than from zero.
+    pub fn adjust_ability(&mut self, delta: i32) {
+        let a = self.cursor_ability();
+        let current = self.sheet.score(a);
+        self.session.set_ability_override(a.abbrev(), current + delta);
+        self.recompute();
+    }
+
+    pub fn clear_ability_override(&mut self) {
+        let a = self.cursor_ability();
+        self.session.clear_ability_override(a.abbrev());
+        self.recompute();
+    }
+
+    pub fn ability_is_overridden(&self, a: Ability) -> bool {
+        self.session.ability_override(a.abbrev()).is_some()
+    }
+
+    /// Rebuild the sheet after anything that feeds it changes, and persist.
+    fn recompute(&mut self) {
+        self.sheet = crate::derive::derive_with(&self.character, &self.session.ability_overrides);
+        self.persist();
     }
 
     // -- limited uses ------------------------------------------------------
@@ -450,7 +497,9 @@ impl App {
                 self.number_buffer.clear();
                 self.mode = Mode::List;
             }
-            Mode::Conditions | Mode::Rest | Mode::RollLog => self.mode = Mode::List,
+            Mode::Conditions | Mode::Rest | Mode::RollLog | Mode::Abilities => {
+                self.mode = Mode::List
+            }
             Mode::Dice => {
                 self.dice_buffer.clear();
                 self.dice_error = None;

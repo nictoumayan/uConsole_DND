@@ -48,6 +48,22 @@ pub struct Session {
     pub death_successes: u8,
     pub death_failures: u8,
     pub inspiration: bool,
+    /// Final ability scores the player has corrected by hand, keyed "STR".."CHA".
+    ///
+    /// This exists because D&D Beyond does not ship everything its own sheet
+    /// applies. The 2024 background ability increases are the known case: the
+    /// Scribe background grants +1/+1/+1 across Dexterity, Intelligence and
+    /// Wisdom, D&D Beyond's website applies them, and the character JSON
+    /// contains no trace — `"wisdom-score"` appears zero times in a 200KB
+    /// payload. There is nothing to compute from, so the number has to come
+    /// from the player.
+    ///
+    /// Correcting the score rather than the derived value is deliberate: one
+    /// entry here fixes armour class, passive perception, every save, every
+    /// skill and initiative at once, and stays correct as the character levels.
+    #[serde(default)]
+    pub ability_overrides: BTreeMap<String, i32>,
+
     /// Expended limited uses, keyed `"<kind>:<id>"`.
     ///
     /// The recharge type is stored alongside the count rather than looked up
@@ -80,6 +96,7 @@ impl Session {
             death_successes: 0,
             death_failures: 0,
             inspiration,
+            ability_overrides: BTreeMap::new(),
             uses: BTreeMap::new(),
         }
     }
@@ -208,6 +225,22 @@ impl Session {
     pub fn clear_death_saves(&mut self) {
         self.death_successes = 0;
         self.death_failures = 0;
+    }
+
+    // -- ability overrides -------------------------------------------------
+
+    pub fn ability_override(&self, abbrev: &str) -> Option<i32> {
+        self.ability_overrides.get(abbrev).copied()
+    }
+
+    /// Scores are clamped to 1..=30 — the legal range. A typo that sets a
+    /// score to 300 should not silently produce a +145 modifier.
+    pub fn set_ability_override(&mut self, abbrev: &str, score: i32) {
+        self.ability_overrides.insert(abbrev.to_string(), score.clamp(1, 30));
+    }
+
+    pub fn clear_ability_override(&mut self, abbrev: &str) {
+        self.ability_overrides.remove(abbrev);
     }
 
     // -- limited uses ------------------------------------------------------

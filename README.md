@@ -168,6 +168,7 @@ play
   h              heal        "
   t              temp hp     "
   c              conditions overlay          i    inspiration
+  o              correct ability scores by hand
   u / U          spend / restore one limited use
   r              rest — short or long
   s / f          death save success / failure  (only while dying)
@@ -252,6 +253,29 @@ is deterministic, and `tests/dice.rs` runs a chi-square over 200,000 d20 rolls
 plus a check that advantage and disadvantage land on their theoretical means of
 13.825 and 7.175.
 
+## What D&D Beyond does not ship
+
+Some things the website's own sheet applies are **absent from the character
+data entirely**. There is nothing to compute from, so the number has to come
+from you: press `o`, correct the score, and armour class, passive perception,
+every save, every skill and initiative all follow.
+
+The known case is the **2024 background ability increases**. A background
+grants +2/+1 or +1/+1/+1 across three listed abilities — the Scribe background
+covers Dexterity, Intelligence and Wisdom. D&D Beyond applies them. The
+character JSON contains no trace: `"wisdom-score"` appears **zero times** in a
+200KB payload, and the feat that represents the increase carries no modifiers.
+
+This was caught by comparing the derived sheet against the live one: armour
+class and passive perception were each low by exactly 1, hit points and both
+senses were correct. Correcting Dexterity to 18, Intelligence and Wisdom to 16
+reconciled every value at once — which is the tell that the root cause is the
+scores and not the formulas above them.
+
+The correction is deliberately made on the **score**, never on the derived
+value. One entry fixes everything downstream and stays correct as the character
+levels; six patches on six derived numbers would not.
+
 ## Play state
 
 Everything that changes during a session lives in its own file,
@@ -305,7 +329,7 @@ aesthetic, not a defect.
 
 ## Testing
 
-140 tests, and the interaction model is the point of the architecture: `app/state.rs`
+149 tests, and the interaction model is the point of the architecture: `app/state.rs`
 and `app/keys.rs` depend on neither ratatui nor a terminal, so every key a player
 can press is exercised headlessly — selection memory across tabs, filter scoping,
 the escape ladder, clamping when a filter shrinks the list under the cursor.

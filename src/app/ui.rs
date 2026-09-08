@@ -42,6 +42,7 @@ pub fn draw(f: &mut Frame, app: &mut App, portrait: Option<&Portrait>) {
 
     match app.mode {
         Mode::RollLog => draw_roll_log(f, app, body),
+        Mode::Abilities => draw_abilities(f, app, body),
         Mode::Conditions => draw_conditions(f, app, body),
         Mode::Rest => draw_rest(f, body),
         Mode::Detail => draw_detail(f, app, body),
@@ -381,6 +382,9 @@ fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
             None => format!("roll: {}_   ↵ roll   esc cancel", app.dice_buffer),
         },
         Mode::RollLog => "esc close".to_string(),
+        Mode::Abilities => {
+            "j/k pick   +/- adjust   0 clear override   esc close".to_string()
+        }
         Mode::Detail => "esc back   j/k scroll   n/p next·prev row".to_string(),
         // While dying, the thing you need is the death-save keys, not the
         // navigation you already know.
@@ -393,7 +397,7 @@ fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
         Mode::List if app.is_list_tab() => {
             "d dmg  h heal  c cond  r rest  u use  / find  ↵ detail".to_string()
         }
-        Mode::List => "d dmg  h heal  t temp  c cond  r rest  i insp  q quit".to_string(),
+        Mode::List => "d dmg  h heal  t temp  c cond  r rest  o scores  q quit".to_string(),
     };
 
     let right = if app.is_list_tab() && matches!(app.mode, Mode::List | Mode::Filter) {
@@ -514,6 +518,57 @@ fn roll_style(r: &crate::dice::Roll) -> Style {
     } else {
         theme::bright()
     }
+}
+
+fn draw_abilities(f: &mut Frame, app: &App, area: Rect) {
+    let block = content_block().title(Span::styled(" ABILITY SCORES ", theme::bright()));
+    let inner = block.inner(area);
+    f.render_widget(Clear, area);
+    f.render_widget(block, area);
+
+    let mut lines: Vec<Line> = Vec::new();
+    for (i, a) in crate::derive::tables::Ability::ALL.iter().enumerate() {
+        let score = app.sheet.score(*a);
+        let modifier = app.sheet.modifier(*a);
+        let overridden = app.ability_is_overridden(*a);
+        let style = if i == app.ability_cursor {
+            theme::selection()
+        } else if overridden {
+            theme::bright()
+        } else {
+            theme::base()
+        };
+        lines.push(Line::styled(
+            format!(
+                " {}  {:>2}  {:+}   {}",
+                a.abbrev(),
+                score,
+                modifier,
+                if overridden { "corrected" } else { "" }
+            ),
+            style,
+        ));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::styled(
+        "D&D Beyond applies some increases it does not ship in the character",
+        theme::dim(),
+    ));
+    lines.push(Line::styled(
+        "data — 2024 background increases are the known case. Correct the",
+        theme::dim(),
+    ));
+    lines.push(Line::styled(
+        "score here and armour class, passive perception, saves, skills and",
+        theme::dim(),
+    ));
+    lines.push(Line::styled(
+        "initiative all follow.",
+        theme::dim(),
+    ));
+
+    f.render_widget(Paragraph::new(lines), inner);
 }
 
 fn draw_rest(f: &mut Frame, area: Rect) {

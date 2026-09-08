@@ -160,3 +160,54 @@ fn real_character_matches_dndbeyond() {
     }
     eprintln!("checked {checked} real snapshot(s)");
 }
+
+// -- hand-entered ability scores -------------------------------------------
+
+#[test]
+fn an_ability_override_replaces_the_computed_score() {
+    use vellum::derive::{derive_with, AbilityOverrides};
+    let raw = include_str!("fixtures/srd_rogue.json");
+    let ch: Character = serde_json::from_str(raw).unwrap();
+
+    let mut o = AbilityOverrides::new();
+    o.insert("DEX".into(), 18);
+    let s = derive_with(&ch, &o);
+    assert_eq!(s.score(vellum::derive::tables::Ability::Dex), 18);
+    // Untouched abilities still come from the payload.
+    assert_eq!(s.score(vellum::derive::tables::Ability::Str), 8);
+}
+
+#[test]
+fn correcting_a_score_fixes_everything_downstream_at_once() {
+    // The whole reason the override lives on the score and not on armour
+    // class: one correction has to fix AC, passive perception, saves, skills
+    // and initiative together.
+    use vellum::derive::{derive_with, AbilityOverrides};
+    let ch: Character = serde_json::from_str(include_str!("fixtures/srd_rogue.json")).unwrap();
+
+    let before = derive_with(&ch, &AbilityOverrides::new());
+    assert_eq!(before.armor_class.value, 14);
+    assert_eq!(before.initiative.value, 3);
+
+    let mut o = AbilityOverrides::new();
+    o.insert("DEX".into(), 18);
+    let after = derive_with(&ch, &o);
+
+    assert_eq!(after.armor_class.value, 15, "AC did not follow the score");
+    assert_eq!(after.initiative.value, 4, "initiative did not follow");
+    assert_eq!(save(&after, "DEX"), 7, "save did not follow");
+    assert_eq!(skill(&after, "Stealth"), 10, "expertise skill did not follow");
+    assert_eq!(after.hp.max.value, before.hp.max.value, "DEX must not touch hit points");
+}
+
+#[test]
+fn a_wisdom_correction_moves_passive_perception() {
+    use vellum::derive::{derive_with, AbilityOverrides};
+    let ch: Character = serde_json::from_str(include_str!("fixtures/srd_rogue.json")).unwrap();
+    let mut o = AbilityOverrides::new();
+    o.insert("WIS".into(), 16);
+    let s = derive_with(&ch, &o);
+    // WIS 16 -> +3, not proficient in Perception on the fixture -> PP 13.
+    assert_eq!(s.modifier(vellum::derive::tables::Ability::Wis), 3);
+    assert_eq!(s.passive_perception, 10 + skill(&s, "Perception"));
+}

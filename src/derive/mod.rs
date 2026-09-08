@@ -112,10 +112,17 @@ fn sum(ch: &Character, kind: &str, sub_type: &str) -> i32 {
     active(ch, kind, sub_type).filter_map(|m| m.value).sum()
 }
 
+/// Final ability scores the player has corrected by hand, keyed "STR".."CHA".
+pub type AbilityOverrides = std::collections::BTreeMap<String, i32>;
+
 pub fn derive(ch: &Character) -> Sheet {
+    derive_with(ch, &AbilityOverrides::new())
+}
+
+pub fn derive_with(ch: &Character, overrides: &AbilityOverrides) -> Sheet {
     let total_level: i32 = ch.classes.iter().map(|c| c.level).sum();
     let pb = proficiency_bonus(total_level);
-    let scores = derive_scores(ch);
+    let scores = derive_scores(ch, overrides);
     let mod_of = |a: Ability| scores[a.index()].modifier;
 
     let hp = derive_hp(ch, total_level, mod_of(Ability::Con));
@@ -185,9 +192,16 @@ pub fn derive(ch: &Character) -> Sheet {
     }
 }
 
-fn derive_scores(ch: &Character) -> [Score; 6] {
+fn derive_scores(ch: &Character, overrides: &AbilityOverrides) -> [Score; 6] {
     std::array::from_fn(|i| {
         let ability = Ability::ALL[i];
+
+        // A hand-entered score wins over everything. It is the last resort for
+        // the things D&D Beyond applies but does not ship — see
+        // Session::ability_overrides.
+        if let Some(v) = overrides.get(ability.abbrev()) {
+            return Score { ability, score: *v, modifier: ability_modifier(*v) };
+        }
 
         // An explicit override on D&D Beyond replaces the whole calculation.
         if let Some(Some(v)) = ch.override_stats.get(i).map(|s| s.value) {

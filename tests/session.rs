@@ -324,3 +324,30 @@ fn a_session_written_before_uses_existed_still_loads() {
     assert!(s.uses.is_empty());
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn ability_overrides_are_clamped_to_the_legal_range() {
+    // A typo must not produce a +145 modifier.
+    let mut s = fresh();
+    s.set_ability_override("DEX", 300);
+    assert_eq!(s.ability_override("DEX"), Some(30));
+    s.set_ability_override("DEX", -5);
+    assert_eq!(s.ability_override("DEX"), Some(1));
+    s.clear_ability_override("DEX");
+    assert_eq!(s.ability_override("DEX"), None);
+}
+
+#[test]
+fn ability_overrides_survive_a_round_trip() {
+    let dir = std::env::temp_dir().join(format!("vellum-abil-{}", std::process::id()));
+    let path = dir.join("s.json");
+    let mut s = fresh();
+    s.set_ability_override("DEX", 18);
+    s.set_ability_override("WIS", 16);
+    s.save(&path).expect("saves");
+
+    let back = Session::load_or_seed(&path, 1, 0, 0, false);
+    assert_eq!(back.ability_override("DEX"), Some(18));
+    assert_eq!(back.ability_override("WIS"), Some(16));
+    let _ = std::fs::remove_dir_all(&dir);
+}

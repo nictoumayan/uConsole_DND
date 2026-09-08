@@ -714,3 +714,56 @@ fn uses_survive_switching_tabs_and_filtering() {
         "the spend did not stick"
     );
 }
+
+// -- ability corrections ---------------------------------------------------
+
+#[test]
+fn adjusting_a_score_recomputes_the_whole_sheet_live() {
+    let mut a = seeded();
+    let ac_before = a.sheet.armor_class.value;
+
+    press(&mut a, KeyCode::Char('o'));
+    assert_eq!(a.mode, Mode::Abilities);
+    press(&mut a, KeyCode::Char('j')); // STR -> DEX
+    press(&mut a, KeyCode::Char('+'));
+
+    assert_eq!(a.sheet.score(vellum::derive::tables::Ability::Dex), 18);
+    assert_eq!(a.sheet.armor_class.value, ac_before + 1, "AC did not follow");
+    assert!(a.ability_is_overridden(vellum::derive::tables::Ability::Dex));
+}
+
+#[test]
+fn the_first_nudge_starts_from_the_computed_score_not_from_zero() {
+    let mut a = seeded();
+    let dex = a.sheet.score(vellum::derive::tables::Ability::Dex);
+    press(&mut a, KeyCode::Char('o'));
+    press(&mut a, KeyCode::Char('j'));
+    press(&mut a, KeyCode::Char('-'));
+    assert_eq!(a.sheet.score(vellum::derive::tables::Ability::Dex), dex - 1);
+}
+
+#[test]
+fn clearing_an_override_returns_to_the_computed_score() {
+    let mut a = seeded();
+    let dex = a.sheet.score(vellum::derive::tables::Ability::Dex);
+    press(&mut a, KeyCode::Char('o'));
+    press(&mut a, KeyCode::Char('j'));
+    for _ in 0..3 {
+        press(&mut a, KeyCode::Char('+'));
+    }
+    assert_eq!(a.sheet.score(vellum::derive::tables::Ability::Dex), dex + 3);
+
+    press(&mut a, KeyCode::Char('0'));
+    assert_eq!(a.sheet.score(vellum::derive::tables::Ability::Dex), dex);
+    assert!(!a.ability_is_overridden(vellum::derive::tables::Ability::Dex));
+}
+
+#[test]
+fn the_ability_cursor_wraps() {
+    let mut a = seeded();
+    press(&mut a, KeyCode::Char('o'));
+    press(&mut a, KeyCode::Char('k'));
+    assert_eq!(a.ability_cursor, 5, "up from the first should wrap to the last");
+    press(&mut a, KeyCode::Char('j'));
+    assert_eq!(a.ability_cursor, 0);
+}
