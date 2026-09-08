@@ -233,6 +233,19 @@ impl App {
         self.mode = Mode::RollLog;
     }
 
+    /// Passive Perception with the SRD's +/-5 for Advantage or Disadvantage on
+    /// Perception checks — being Poisoned genuinely lowers how alert you are.
+    pub fn effective_passive_perception(&self) -> i32 {
+        let bonus = self
+            .sheet
+            .skills
+            .iter()
+            .find(|e| e.name == "Perception")
+            .map(|e| e.value)
+            .unwrap_or(0);
+        rules::passive_perception(bonus, &self.session.conditions, &self.sheet.advantages)
+    }
+
     /// Walking speed after exhaustion and any condition that pins you down.
     pub fn effective_speed(&self) -> i32 {
         rules::effective_speed(

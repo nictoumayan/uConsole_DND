@@ -262,6 +262,20 @@ What it models:
 - **Spell save DC** and spell attack bonus
 - Carrying capacity, and whether you are incapacitated
 
+Verified line by line against the official **SRD 5.2.1 PDF** rather than a
+secondary source, which turned up four things summaries had got wrong or
+omitted:
+
+- **Incapacitated gives Disadvantage on Initiative** specifically. It does
+  nothing to ability checks in general, so this is invisible unless you read
+  the entry.
+- **Invisible gives Advantage on Initiative** for the same reason.
+- **Stunned does not zero your Speed.** Grappled, Restrained, Paralyzed,
+  Petrified and Unconscious each carry an explicit "Speed 0" clause. Stunned
+  does not — it only incapacitates. This was wrong in the first cut.
+- **Passive Perception shifts by 5**, not 0, when you have Advantage or
+  Disadvantage on Perception checks. Being Poisoned takes Rihanne from 15 to 10.
+
 What it deliberately does **not** decide: whether you can see the source of
 your fear, whether the attacker is within five feet, whether a check relies on
 sight. Those surface as a note in the conditions overlay so you make the
@@ -374,7 +388,7 @@ aesthetic, not a defect.
 
 ## Testing
 
-168 tests, and the interaction model is the point of the architecture: `app/state.rs`
+174 tests, and the interaction model is the point of the architecture: `app/state.rs`
 and `app/keys.rs` depend on neither ratatui nor a terminal, so every key a player
 can press is exercised headlessly — selection memory across tabs, filter scoping,
 the escape ladder, clamping when a filter shrinks the list under the cursor.
@@ -473,6 +487,7 @@ risks are in [docs/sync.md](docs/sync.md).
 ## Content
 
 Rules constants in `derive/tables.rs` and the mechanics in `rules.rs` are
-SRD 5.2.1 (CC-BY-4.0), Wizards of the Coast. Character
+SRD 5.2.1 (CC-BY-4.0), Wizards of the Coast, taken from the official PDF at
+<https://www.dndbeyond.com/srd>. Character
 snapshots are **not** — they embed non-SRD rules text and must never be
 committed. See `tests/fixtures/README.md`.

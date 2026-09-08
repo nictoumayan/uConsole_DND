@@ -153,7 +153,8 @@ fn speed_falls_with_exhaustion_and_hits_zero_when_pinned() {
     assert_eq!(effective_speed(30, 0, &[]), 30);
     assert_eq!(effective_speed(30, 2, &[]), 20);
     assert_eq!(effective_speed(30, 8, &[]), 0, "speed floors at zero");
-    for pinned in ["Grappled", "Restrained", "Paralyzed", "Stunned", "Unconscious", "Petrified"] {
+    // Stunned is deliberately absent: see stunned_does_not_zero_your_speed.
+    for pinned in ["Grappled", "Restrained", "Paralyzed", "Unconscious", "Petrified"] {
         assert_eq!(effective_speed(30, 0, &c(&[pinned])), 0, "{pinned} should stop you");
     }
     assert_eq!(effective_speed(30, 0, &c(&["Poisoned"])), 30);
@@ -208,4 +209,95 @@ fn every_condition_in_the_session_list_has_a_rules_entry() {
             || !e.note.is_empty();
         assert!(modelled, "{name} has no effects at all — is it spelled the same in both lists?");
     }
+}
+
+// -- corrections made after reading the official SRD 5.2.1 PDF -------------
+
+#[test]
+fn incapacitated_gives_disadvantage_on_initiative_specifically() {
+    // "Surprised. If you're Incapacitated when you roll Initiative, you have
+    // Disadvantage on the roll." Incapacitated does nothing to ability checks
+    // in general, so this is invisible unless you read the entry.
+    let inc = c(&["Incapacitated"]);
+    assert_eq!(
+        resolve(TestKind::Initiative, &inc, 0, &[], Advantage::Normal).advantage,
+        Advantage::Disadvantage
+    );
+    assert_eq!(
+        resolve(CHECK, &inc, 0, &[], Advantage::Normal).advantage,
+        Advantage::Normal,
+        "Incapacitated does not hamper ordinary ability checks"
+    );
+}
+
+#[test]
+fn invisible_gives_advantage_on_initiative_and_on_attacks() {
+    // "Surprise. If you're Invisible when you roll Initiative, you have
+    // Advantage on the roll."
+    let inv = c(&["Invisible"]);
+    assert_eq!(
+        resolve(TestKind::Initiative, &inv, 0, &[], Advantage::Normal).advantage,
+        Advantage::Advantage
+    );
+    assert_eq!(
+        resolve(TestKind::Attack, &inv, 0, &[], Advantage::Normal).advantage,
+        Advantage::Advantage
+    );
+    assert_eq!(
+        resolve(CHECK, &inv, 0, &[], Advantage::Normal).advantage,
+        Advantage::Normal,
+        "Invisible does not help ordinary ability checks"
+    );
+}
+
+#[test]
+fn stunned_does_not_zero_your_speed() {
+    // Grappled, Restrained, Paralyzed, Petrified and Unconscious each carry an
+    // explicit "Speed 0" clause. Stunned does not — it only incapacitates.
+    assert_eq!(effective_speed(30, 0, &c(&["Stunned"])), 30);
+    assert!(is_incapacitated(&c(&["Stunned"])));
+    for pinned in ["Grappled", "Restrained", "Paralyzed", "Petrified", "Unconscious"] {
+        assert_eq!(effective_speed(30, 0, &c(&[pinned])), 0, "{pinned} should say Speed 0");
+    }
+}
+
+#[test]
+fn passive_perception_shifts_by_five_with_advantage_or_disadvantage() {
+    // "A creature's Passive Perception equals 10 plus the creature's Wisdom
+    // (Perception) check bonus. If the creature has Advantage on such checks,
+    // increase the score by 5. If Disadvantage, decrease the score by 5."
+    assert_eq!(passive_perception(6, &[], &[]), 16);
+    assert_eq!(
+        passive_perception(6, &c(&["Poisoned"]), &[]),
+        11,
+        "disadvantage on ability checks should lower it by 5"
+    );
+    assert_eq!(
+        passive_perception(6, &[], &c(&["perception"])),
+        21,
+        "a standing advantage on Perception should raise it by 5"
+    );
+    // Cancelling leaves it unchanged.
+    assert_eq!(passive_perception(6, &c(&["Poisoned"]), &c(&["perception"])), 16);
+}
+
+#[test]
+fn the_srd_example_of_passive_perception_checks_out() {
+    // "a level 1 character with a Wisdom of 15 and proficiency in Perception
+    // has a Passive Perception of 14 (10 + 2 + 2)"
+    assert_eq!(passive_perception(2 + 2, &[], &[]), 14);
+}
+
+#[test]
+fn several_disadvantages_and_one_advantage_still_cancel() {
+    // "This is true even if multiple circumstances impose Disadvantage and
+    // only one grants Advantage."
+    let r = resolve(
+        TestKind::Attack,
+        &c(&["Poisoned", "Frightened", "Prone"]),
+        0,
+        &[],
+        Advantage::Advantage,
+    );
+    assert_eq!(r.advantage, Advantage::Normal);
 }

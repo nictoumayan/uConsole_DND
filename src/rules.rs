@@ -1,8 +1,9 @@
 //! The 2024 rules that turn a character sheet into rolls.
 //!
 //! Everything here is game mechanics from SRD 5.2.1 (CC-BY-4.0, Wizards of the
-//! Coast). It is deliberately separate from `derive`: `derive` answers "what
-//! are this character's numbers", this answers "what happens when they roll".
+//! Coast), verified against the official PDF rather than a secondary source.
+//! It is deliberately separate from `derive`: `derive` answers "what are this
+//! character's numbers", this answers "what happens when they roll".
 //!
 //! The point of putting it in one place is that the sheet and the dice can
 //! never disagree. If you are Poisoned, the roller knows without being told.
@@ -50,6 +51,11 @@ pub enum Disposition {
 pub struct Effects {
     pub attack: Disposition,
     pub ability_check: Disposition,
+    /// Some conditions single out the Initiative roll specifically, separately
+    /// from ability checks in general — Incapacitated and Invisible both do,
+    /// under a heading the SRD calls "Surprise". Missed entirely when working
+    /// from condition summaries rather than the source.
+    pub initiative: Disposition,
     /// Saves that take Disadvantage.
     pub save_disadvantage: &'static [Ability],
     /// Saves that fail automatically.
@@ -63,6 +69,7 @@ pub struct Effects {
 const NONE: Effects = Effects {
     attack: Disposition::Neutral,
     ability_check: Disposition::Neutral,
+    initiative: Disposition::Neutral,
     save_disadvantage: &[],
     save_auto_fail: &[],
     speed_zero: false,
@@ -103,13 +110,19 @@ pub fn effects(condition: &str) -> Effects {
             ..NONE
         },
         "Incapacitated" => Effects {
+            // "Surprised. If you're Incapacitated when you roll Initiative,
+            // you have Disadvantage on the roll."
+            initiative: Disposition::Disadvantage,
             incapacitated: true,
-            note: "no actions, bonus actions or reactions; concentration breaks",
+            note: "no actions, bonus actions or reactions; concentration breaks; you can't speak",
             ..NONE
         },
         "Invisible" => Effects {
             attack: Disposition::Advantage,
-            note: "attacks against you have disadvantage",
+            // "Surprise. If you're Invisible when you roll Initiative, you
+            // have Advantage on the roll."
+            initiative: Disposition::Advantage,
+            note: "attacks against you have disadvantage; you are concealed",
             ..NONE
         },
         "Paralyzed" => Effects {
@@ -145,7 +158,9 @@ pub fn effects(condition: &str) -> Effects {
         },
         "Stunned" => Effects {
             save_auto_fail: STR_DEX,
-            speed_zero: true,
+            // No Speed 0 clause: unlike Grappled, Restrained, Paralyzed,
+            // Petrified and Unconscious, the SRD entry for Stunned does not
+            // zero your Speed. It only makes you Incapacitated.
             incapacitated: true,
             note: "attacks against you have advantage",
             ..NONE
@@ -227,6 +242,16 @@ pub fn resolve(
 
     for c in conditions {
         let e = effects(c);
+        // Initiative is a Dexterity check, so anything hampering ability
+        // checks reaches it — and some conditions single it out on top.
+        if kind == TestKind::Initiative {
+            match e.initiative {
+                Disposition::Advantage => adv.push(c.clone()),
+                Disposition::Disadvantage => dis.push(c.clone()),
+                Disposition::Neutral => {}
+            }
+        }
+
         let disposition = match kind {
             TestKind::Attack => e.attack,
             k if k.is_ability_check() => e.ability_check,
@@ -345,4 +370,26 @@ pub fn carrying_capacity(strength: i32) -> i32 {
 
 pub fn is_incapacitated(conditions: &[String]) -> bool {
     conditions.iter().any(|c| effects(c).incapacitated)
+}
+
+/// "A creature's Passive Perception equals 10 plus the creature's Wisdom
+/// (Perception) check bonus. If the creature has Advantage on such checks,
+/// increase the score by 5. If the creature has Disadvantage on them, decrease
+/// the score by 5."
+///
+/// Exhaustion is deliberately not applied: it reduces a *roll*, and a passive
+/// score is not one.
+pub fn passive_perception(
+    perception_bonus: i32,
+    conditions: &[String],
+    granted: &[String],
+) -> i32 {
+    let kind = TestKind::Check { ability: Ability::Wis, skill: Some("perception") };
+    let r = resolve(kind, conditions, 0, granted, Advantage::Normal);
+    10 + perception_bonus
+        + match r.advantage {
+            Advantage::Advantage => 5,
+            Advantage::Disadvantage => -5,
+            Advantage::Normal => 0,
+        }
 }

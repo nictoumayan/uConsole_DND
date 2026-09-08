@@ -77,7 +77,14 @@ fn draw_status(f: &mut Frame, app: &App, area: Rect) {
         Span::styled("  PB ", theme::dim()),
         Span::styled(format!("{:+}", s.proficiency_bonus), theme::base()),
         Span::styled("  PP ", theme::dim()),
-        Span::styled(s.passive_perception.to_string(), theme::base()),
+        Span::styled(
+            app.effective_passive_perception().to_string(),
+            if app.effective_passive_perception() == s.passive_perception {
+                theme::base()
+            } else {
+                theme::danger()
+            },
+        ),
     ];
     if app.session.temporary_hp > 0 {
         second.push(Span::styled(
@@ -395,7 +402,7 @@ fn draw_skills(f: &mut Frame, app: &App, area: Rect) {
     lines.push(Line::styled(
         format!(
             "* proficient   ** expertise            PASSIVE PERCEPTION {}",
-            s.passive_perception
+            app.effective_passive_perception()
         ),
         theme::dim(),
     ));
