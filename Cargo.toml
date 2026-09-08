@@ -18,7 +18,7 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png"]
 
 # crossterm comes in via ratatui's re-export (`ratatui::crossterm`) rather than
 # as a direct dependency, so the two can never drift to incompatible versions.
-ratatui = "0.29"
+ratatui = "0.30"
 
 [profile.release]
 opt-level = "z"
