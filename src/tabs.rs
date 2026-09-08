@@ -66,10 +66,9 @@ pub fn render(v: &View) -> String {
     out.push("─".repeat(COLS));
 
     // -- content -----------------------------------------------------------
-    let rows = rows_for(v.tab, v.character, s.total_level);
+    let rows = rows_for(v.tab, v.character, s);
     let total = match v.tab {
-        Tab::Vitals => 0,
-        Tab::Skills => 0,
+        Tab::Vitals | Tab::Skills => 0,
         _ => rows.len(),
     };
     let body = match v.tab {

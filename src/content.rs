@@ -6,11 +6,13 @@
 //! j/k moves, Enter opens, / filters, regardless of which tab you are on.
 
 use crate::ddb::schema::{Character, SpellEntry};
+use crate::derive::Sheet;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tab {
     Vitals,
     Skills,
+    Roll,
     Actions,
     Spells,
     Gear,
@@ -19,9 +21,10 @@ pub enum Tab {
 }
 
 impl Tab {
-    pub const ALL: [Tab; 7] = [
+    pub const ALL: [Tab; 8] = [
         Tab::Vitals,
         Tab::Skills,
+        Tab::Roll,
         Tab::Actions,
         Tab::Spells,
         Tab::Gear,
@@ -33,6 +36,7 @@ impl Tab {
         match self {
             Tab::Vitals => "VITALS",
             Tab::Skills => "SKILLS",
+            Tab::Roll => "ROLL",
             Tab::Actions => "ACTIONS",
             Tab::Spells => "SPELLS",
             Tab::Gear => "GEAR",
@@ -66,6 +70,22 @@ impl Tab {
     }
 }
 
+/// What a row rolls, when it rolls anything.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RollSpec {
+    pub modifier: i32,
+    pub kind: RollKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RollKind {
+    Check,
+    Save,
+    Initiative,
+    /// A raw d20 against DC 10, with its own success/failure bookkeeping.
+    DeathSave,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct Row {
     pub name: String,
@@ -75,6 +95,8 @@ pub struct Row {
     pub snippet: String,
     /// Full text for the detail view. All of it is already in the payload.
     pub detail: String,
+    /// Present only on the ROLL tab.
+    pub roll: Option<RollSpec>,
 }
 
 impl Row {
@@ -86,19 +108,87 @@ impl Row {
         if short.trim().is_empty() {
             short = first_line(&detail);
         }
-        Row { name: name.into(), meta: meta.into(), snippet: short, detail }
+        Row { name: name.into(), meta: meta.into(), snippet: short, detail, roll: None }
+    }
+
+    fn rollable(
+        name: impl Into<String>,
+        meta: impl Into<String>,
+        snippet: impl Into<String>,
+        modifier: i32,
+        kind: RollKind,
+    ) -> Row {
+        Row {
+            name: name.into(),
+            meta: meta.into(),
+            snippet: snippet.into(),
+            detail: String::new(),
+            roll: Some(RollSpec { modifier, kind }),
+        }
     }
 }
 
-pub fn rows_for(tab: Tab, ch: &Character, level: i32) -> Vec<Row> {
+pub fn rows_for(tab: Tab, ch: &Character, sheet: &Sheet) -> Vec<Row> {
     match tab {
         Tab::Vitals | Tab::Skills => Vec::new(), // rendered as fixed panes
+        Tab::Roll => rollables(sheet),
         Tab::Actions => actions(ch),
         Tab::Spells => spells(ch),
         Tab::Gear => gear(ch),
-        Tab::Feats => feats(ch, level),
+        Tab::Feats => feats(ch, sheet.total_level),
         Tab::Notes => notes(ch),
     }
+}
+
+/// Everything you can be asked to roll, in the order a DM asks for it:
+/// initiative, then saves, then skills. The list is uniform with every other
+/// tab, so `/` filters it — typing "ste" and hitting enter is the fastest
+/// path to a Stealth check there is.
+fn rollables(sheet: &Sheet) -> Vec<Row> {
+    let mut out = vec![Row::rollable(
+        "Initiative",
+        "initiative",
+        format!("{:+}", sheet.initiative.value),
+        sheet.initiative.value,
+        RollKind::Initiative,
+    )];
+
+    for save in &sheet.saves {
+        out.push(Row::rollable(
+            format!("{} save", save.name),
+            if save.proficient { "save · prof" } else { "save" },
+            format!("{:+}", save.value),
+            save.value,
+            RollKind::Save,
+        ));
+    }
+
+    for skill in &sheet.skills {
+        // Must fit the 14-column meta chip; "check · expertise" did not.
+        let meta = if skill.expertise {
+            "expertise"
+        } else if skill.proficient {
+            "proficient"
+        } else {
+            "check"
+        };
+        out.push(Row::rollable(
+            &skill.name,
+            meta,
+            format!("{:+}", skill.value),
+            skill.value,
+            RollKind::Check,
+        ));
+    }
+
+    out.push(Row::rollable(
+        "Death save",
+        "DC 10",
+        "d20, no modifier",
+        0,
+        RollKind::DeathSave,
+    ));
+    out
 }
 
 fn actions(ch: &Character) -> Vec<Row> {

@@ -103,7 +103,7 @@ fn scrolling_past_the_end_clamps_instead_of_blanking() {
 #[test]
 fn detail_view_also_fits_the_panel() {
     let ch = character();
-    let rows = vellum::content::rows_for(Tab::Feats, &ch, 8);
+    let rows = vellum::content::rows_for(Tab::Feats, &ch, &derive(&ch));
     if let Some(row) = rows.first() {
         let out = tabs::detail(row, 0);
         let lines: Vec<&str> = out.lines().collect();

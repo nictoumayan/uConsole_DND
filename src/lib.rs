@@ -8,6 +8,7 @@ pub mod app;
 pub mod content;
 pub mod ddb;
 pub mod device;
+pub mod dice;
 pub mod derive;
 pub mod paths;
 pub mod portrait;

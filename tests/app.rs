@@ -29,6 +29,12 @@ fn press(a: &mut App, c: KeyCode) {
     keys::handle(a, c, KeyModifiers::NONE);
 }
 
+/// Press the digit that jumps to `tab`. Naming the tab rather than hardcoding
+/// its digit means inserting a tab cannot silently retarget a test.
+fn go(a: &mut App, tab: Tab) {
+    press(a, KeyCode::Char(tab.key()));
+}
+
 fn typed(a: &mut App, text: &str) {
     for c in text.chars() {
         press(a, KeyCode::Char(c));
@@ -38,15 +44,17 @@ fn typed(a: &mut App, text: &str) {
 #[test]
 fn digits_jump_straight_to_a_tab() {
     let mut a = app();
-    press(&mut a, KeyCode::Char('4'));
-    assert_eq!(a.tab, Tab::Spells);
-    press(&mut a, KeyCode::Char('1'));
-    assert_eq!(a.tab, Tab::Vitals);
-    press(&mut a, KeyCode::Char('7'));
-    assert_eq!(a.tab, Tab::Notes);
-    // 8 is not a tab and must be inert, not a panic or a wrap-around.
-    press(&mut a, KeyCode::Char('8'));
-    assert_eq!(a.tab, Tab::Notes);
+    for tab in Tab::ALL {
+        press(&mut a, KeyCode::Char(tab.key()));
+        assert_eq!(a.tab, tab, "digit {} did not reach {}", tab.key(), tab.label());
+    }
+    // One past the last tab must be inert — not a panic, not a wrap-around.
+    let last = *Tab::ALL.last().unwrap();
+    let past = char::from_digit(Tab::ALL.len() as u32 + 1, 10).unwrap();
+    press(&mut a, KeyCode::Char(past));
+    assert_eq!(a.tab, last);
+    press(&mut a, KeyCode::Char('0'));
+    assert_eq!(a.tab, last);
 }
 
 #[test]
@@ -61,24 +69,24 @@ fn tab_cycles_both_ways_and_wraps() {
 #[test]
 fn selection_is_remembered_per_tab() {
     let mut a = app();
-    press(&mut a, KeyCode::Char('6')); // FEATS, a long list
+    go(&mut a, Tab::Feats); // a long list
     for _ in 0..5 {
         press(&mut a, KeyCode::Char('j'));
     }
     let feats_at = a.selected();
     assert_eq!(feats_at, 5);
 
-    press(&mut a, KeyCode::Char('5')); // GEAR
+    go(&mut a, Tab::Gear);
     assert_eq!(a.selected(), 0, "a fresh tab starts at the top");
 
-    press(&mut a, KeyCode::Char('6')); // back to FEATS
+    go(&mut a, Tab::Feats); // back again
     assert_eq!(a.selected(), feats_at, "returning to a tab should not lose your place");
 }
 
 #[test]
 fn selection_cannot_leave_the_list() {
     let mut a = app();
-    press(&mut a, KeyCode::Char('6'));
+    go(&mut a, Tab::Feats);
     let n = a.rows().len();
     assert!(n > 0);
     for _ in 0..(n + 50) {
@@ -94,7 +102,7 @@ fn selection_cannot_leave_the_list() {
 #[test]
 fn g_and_shift_g_jump_to_the_ends() {
     let mut a = app();
-    press(&mut a, KeyCode::Char('6'));
+    go(&mut a, Tab::Feats);
     press(&mut a, KeyCode::Char('G'));
     assert_eq!(a.selected(), a.rows().len() - 1);
     press(&mut a, KeyCode::Char('g'));
@@ -120,7 +128,7 @@ fn movement_keys_are_inert_on_fixed_panes() {
 #[test]
 fn filter_narrows_the_list_and_is_case_insensitive() {
     let mut a = app();
-    press(&mut a, KeyCode::Char('6'));
+    go(&mut a, Tab::Feats);
     let all = a.rows().len();
 
     press(&mut a, KeyCode::Char('/'));
@@ -141,7 +149,7 @@ fn printable_keys_are_text_while_filtering_not_commands() {
     // Typing "javelin" must not jump tabs on the "1"-adjacent keys, and "q"
     // must not quit mid-word.
     let mut a = app();
-    press(&mut a, KeyCode::Char('6'));
+    go(&mut a, Tab::Feats);
     press(&mut a, KeyCode::Char('/'));
     typed(&mut a, "q1g");
     assert_eq!(a.filter, "q1g");
@@ -152,7 +160,7 @@ fn printable_keys_are_text_while_filtering_not_commands() {
 #[test]
 fn backspace_edits_the_filter() {
     let mut a = app();
-    press(&mut a, KeyCode::Char('6'));
+    go(&mut a, Tab::Feats);
     press(&mut a, KeyCode::Char('/'));
     typed(&mut a, "sneak");
     press(&mut a, KeyCode::Backspace);
@@ -163,18 +171,18 @@ fn backspace_edits_the_filter() {
 fn changing_tab_clears_the_filter() {
     // Carrying "fire" from SPELLS into GEAR would silently hide most of a kit.
     let mut a = app();
-    press(&mut a, KeyCode::Char('6'));
+    go(&mut a, Tab::Feats);
     press(&mut a, KeyCode::Char('/'));
     typed(&mut a, "sneak");
     press(&mut a, KeyCode::Enter);
-    press(&mut a, KeyCode::Char('5'));
+    go(&mut a, Tab::Gear);
     assert!(a.filter.is_empty(), "filter leaked across tabs");
 }
 
 #[test]
 fn filtering_clamps_a_selection_that_falls_off_the_end() {
     let mut a = app();
-    press(&mut a, KeyCode::Char('6'));
+    go(&mut a, Tab::Feats);
     press(&mut a, KeyCode::Char('G')); // last row
     press(&mut a, KeyCode::Char('/'));
     typed(&mut a, "sneak"); // far fewer rows now
@@ -185,7 +193,7 @@ fn filtering_clamps_a_selection_that_falls_off_the_end() {
 #[test]
 fn escape_backs_out_one_layer_at_a_time() {
     let mut a = app();
-    press(&mut a, KeyCode::Char('6'));
+    go(&mut a, Tab::Feats);
     press(&mut a, KeyCode::Char('/'));
     typed(&mut a, "sneak");
     press(&mut a, KeyCode::Enter); // leave filter mode, keep the filter
@@ -210,7 +218,7 @@ fn escape_backs_out_one_layer_at_a_time() {
 #[test]
 fn detail_opens_the_selected_row_and_scrolls() {
     let mut a = app();
-    press(&mut a, KeyCode::Char('6'));
+    go(&mut a, Tab::Feats);
     press(&mut a, KeyCode::Char('j'));
     let expected = a.selected_row().unwrap().name;
 
@@ -230,7 +238,7 @@ fn detail_opens_the_selected_row_and_scrolls() {
 fn n_and_p_walk_the_list_without_closing_the_detail() {
     // Reading down a list of spells one at a time is the common case.
     let mut a = app();
-    press(&mut a, KeyCode::Char('6'));
+    go(&mut a, Tab::Feats);
     press(&mut a, KeyCode::Enter);
     let first = a.selected_row().unwrap().name;
 
@@ -251,7 +259,7 @@ fn q_quits_from_the_list_and_ctrl_c_from_anywhere() {
     assert!(a.quit);
 
     let mut b = app();
-    press(&mut b, KeyCode::Char('6'));
+    go(&mut b, Tab::Feats);
     press(&mut b, KeyCode::Char('/'));
     typed(&mut b, "sneak");
     assert!(!b.quit);
@@ -262,7 +270,7 @@ fn q_quits_from_the_list_and_ctrl_c_from_anywhere() {
 #[test]
 fn opening_detail_on_an_empty_filtered_list_is_a_no_op() {
     let mut a = app();
-    press(&mut a, KeyCode::Char('6'));
+    go(&mut a, Tab::Feats);
     press(&mut a, KeyCode::Char('/'));
     typed(&mut a, "zzzzzzzz");
     assert_eq!(a.rows().len(), 0);
@@ -425,10 +433,200 @@ fn play_keys_are_text_while_filtering() {
     // "hard leather" contains d, h, r, c, i, t — none may fire as commands.
     let mut a = app();
     let start = a.current_hp();
-    press(&mut a, KeyCode::Char('6'));
+    go(&mut a, Tab::Feats);
     press(&mut a, KeyCode::Char('/'));
     typed(&mut a, "hard leather");
     assert_eq!(a.filter, "hard leather");
     assert_eq!(a.current_hp(), start, "a filter keystroke damaged the character");
+    assert_eq!(a.mode, Mode::Filter);
+}
+
+// -- phase 4: rolling ------------------------------------------------------
+
+fn seeded() -> App {
+    // Deterministic dice so these assert on outcomes, not on luck.
+    let mut a = app();
+    a = a.with_seed(0xC0FFEE);
+    a
+}
+
+#[test]
+fn the_roll_tab_lists_everything_you_get_asked_to_roll() {
+    let mut a = seeded();
+    go(&mut a, Tab::Roll);
+    let names: Vec<String> = a.rows().iter().map(|r| r.name.clone()).collect();
+
+    assert!(names.contains(&"Initiative".to_string()));
+    assert!(names.contains(&"DEX save".to_string()));
+    assert!(names.contains(&"Stealth".to_string()));
+    assert!(names.contains(&"Death save".to_string()));
+    // 1 initiative + 6 saves + 18 skills + 1 death save
+    assert_eq!(a.rows().len(), 26);
+    assert!(a.rows().iter().all(|r| r.roll.is_some()), "a row with nothing to roll");
+}
+
+#[test]
+fn enter_rolls_on_the_roll_tab_and_opens_detail_everywhere_else() {
+    let mut a = seeded();
+    go(&mut a, Tab::Roll);
+    press(&mut a, KeyCode::Enter);
+    assert_eq!(a.mode, Mode::List, "rolling should not open an overlay");
+    assert_eq!(a.rolls.len(), 1);
+
+    go(&mut a, Tab::Feats);
+    press(&mut a, KeyCode::Enter);
+    assert_eq!(a.mode, Mode::Detail);
+    assert_eq!(a.rolls.len(), 1, "opening a detail view rolled dice");
+}
+
+#[test]
+fn a_skill_roll_uses_the_derived_modifier() {
+    let mut a = seeded();
+    go(&mut a, Tab::Roll);
+    press(&mut a, KeyCode::Char('/'));
+    typed(&mut a, "stealth");
+    press(&mut a, KeyCode::Enter); // leave filter
+    press(&mut a, KeyCode::Enter); // roll
+
+    let r = a.last_roll().expect("a roll");
+    assert_eq!(r.label, "Stealth");
+    // Stealth is +9 on the fixture; the modifier must match the sheet.
+    assert_eq!(r.expr.modifier, 9);
+    assert_eq!(r.total, r.kept as i32 + 9);
+}
+
+#[test]
+fn advantage_and_disadvantage_roll_two_dice() {
+    let mut a = seeded();
+    go(&mut a, Tab::Roll);
+    press(&mut a, KeyCode::Char('a'));
+    let adv = a.last_roll().unwrap().clone();
+    assert_eq!(adv.dice.len(), 2);
+    assert_eq!(adv.kept, *adv.dice.iter().max().unwrap());
+
+    press(&mut a, KeyCode::Char('z'));
+    let dis = a.last_roll().unwrap();
+    assert_eq!(dis.kept, *dis.dice.iter().min().unwrap());
+}
+
+#[test]
+fn rolling_does_nothing_on_tabs_that_are_not_rollable() {
+    let mut a = seeded();
+    for tab in [Tab::Vitals, Tab::Skills, Tab::Gear, Tab::Notes] {
+        go(&mut a, tab);
+        press(&mut a, KeyCode::Char('a'));
+        press(&mut a, KeyCode::Char('z'));
+    }
+    assert!(a.rolls.is_empty(), "rolled from a tab with nothing to roll");
+}
+
+#[test]
+fn a_death_save_applies_itself() {
+    // Rolling one and then recording it by hand is double-entry that gets
+    // skipped mid-fight.
+    let mut a = seeded();
+    press(&mut a, KeyCode::Char('d'));
+    typed(&mut a, "999");
+    press(&mut a, KeyCode::Enter);
+    assert!(a.is_dying());
+
+    go(&mut a, Tab::Roll);
+    press(&mut a, KeyCode::Char('/'));
+    typed(&mut a, "death");
+    press(&mut a, KeyCode::Enter);
+
+    let before = (a.session.death_successes, a.session.death_failures);
+    press(&mut a, KeyCode::Enter);
+    let after = (a.session.death_successes, a.session.death_failures);
+    assert_ne!(before, after, "a death save roll changed nothing");
+
+    let r = a.last_roll().unwrap();
+    if r.kept >= 10 {
+        assert!(after.0 > before.0 || r.is_nat20());
+    } else {
+        assert!(after.1 > before.1);
+    }
+}
+
+#[test]
+fn free_form_dice_parse_and_roll() {
+    let mut a = seeded();
+    press(&mut a, KeyCode::Char('x'));
+    assert_eq!(a.mode, Mode::Dice);
+    typed(&mut a, "2d6+3");
+    press(&mut a, KeyCode::Enter);
+
+    let r = a.last_roll().expect("a roll");
+    assert_eq!(r.expr.count, 2);
+    assert_eq!(r.expr.sides, 6);
+    assert!((5..=15).contains(&r.total), "2d6+3 out of range: {}", r.total);
+    assert_eq!(a.mode, Mode::List);
+}
+
+#[test]
+fn a_bad_dice_expression_keeps_the_prompt_open_so_you_can_fix_it() {
+    let mut a = seeded();
+    press(&mut a, KeyCode::Char('x'));
+    typed(&mut a, "2dd6");
+    press(&mut a, KeyCode::Enter);
+    assert_eq!(a.mode, Mode::Dice, "prompt closed on a typo");
+    assert!(a.dice_error.is_some());
+    assert!(a.rolls.is_empty());
+
+    // Fixable in place rather than retyped: "2dd6" -> "2dd" -> "2d" -> "2d6".
+    press(&mut a, KeyCode::Backspace);
+    press(&mut a, KeyCode::Backspace);
+    assert_eq!(a.dice_buffer, "2d");
+    typed(&mut a, "6");
+    press(&mut a, KeyCode::Enter);
+    assert_eq!(a.mode, Mode::List);
+    assert_eq!(a.rolls.len(), 1);
+}
+
+#[test]
+fn dice_entry_swallows_command_keys() {
+    // "1d20" contains a digit that would jump tabs and a 'd' that would open
+    // the damage prompt.
+    let mut a = seeded();
+    go(&mut a, Tab::Feats);
+    press(&mut a, KeyCode::Char('x'));
+    typed(&mut a, "1d20");
+    assert_eq!(a.dice_buffer, "1d20");
+    assert_eq!(a.tab, Tab::Feats);
+    assert!(matches!(a.mode, Mode::Dice));
+}
+
+#[test]
+fn the_roll_log_keeps_newest_first_and_is_capped() {
+    let mut a = seeded();
+    go(&mut a, Tab::Roll);
+    for _ in 0..(vellum::app::state::ROLL_LOG_CAP + 15) {
+        press(&mut a, KeyCode::Enter);
+    }
+    assert_eq!(a.rolls.len(), vellum::app::state::ROLL_LOG_CAP, "log grew without bound");
+
+    press(&mut a, KeyCode::Char('x'));
+    typed(&mut a, "1d4");
+    press(&mut a, KeyCode::Enter);
+    assert_eq!(a.last_roll().unwrap().expr.sides, 4, "newest roll is not first");
+}
+
+#[test]
+fn the_roll_log_opens_and_closes() {
+    let mut a = seeded();
+    press(&mut a, KeyCode::Char('l'));
+    assert_eq!(a.mode, Mode::RollLog);
+    press(&mut a, KeyCode::Esc);
+    assert_eq!(a.mode, Mode::List);
+}
+
+#[test]
+fn dice_keys_are_text_while_filtering() {
+    let mut a = seeded();
+    go(&mut a, Tab::Feats);
+    press(&mut a, KeyCode::Char('/'));
+    typed(&mut a, "axe lantern");
+    assert_eq!(a.filter, "axe lantern");
+    assert!(a.rolls.is_empty(), "a filter keystroke rolled dice");
     assert_eq!(a.mode, Mode::Filter);
 }

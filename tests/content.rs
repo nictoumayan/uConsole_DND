@@ -1,6 +1,7 @@
 //! Tab content and the HTML-to-text pass.
 
 use vellum::content::{html_to_text, Tab};
+use vellum::derive::derive;
 
 #[test]
 fn tabs_have_stable_digit_keys() {
@@ -15,7 +16,9 @@ fn tabs_have_stable_digit_keys() {
     assert_eq!(Tab::from_name("VITALS"), Tab::from_name("vitals"));
     assert!(Tab::from_name("nope").is_none());
     assert!(Tab::from_name("0").is_none());
-    assert!(Tab::from_name("8").is_none());
+    // One past the last tab, derived rather than hardcoded.
+    let past = (Tab::ALL.len() + 1).to_string();
+    assert!(Tab::from_name(&past).is_none());
 }
 
 #[test]
@@ -70,7 +73,7 @@ fn class_features_are_filtered_to_the_character_s_level() {
     // level-20 capstone is noise at best and misleading at worst.
     let ch: vellum::ddb::Character =
         serde_json::from_str(include_str!("fixtures/srd_rogue.json")).unwrap();
-    let rows = vellum::content::rows_for(Tab::Feats, &ch, 8);
+    let rows = vellum::content::rows_for(Tab::Feats, &ch, &derive(&ch));
     let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
 
     assert!(names.contains(&"Sneak Attack"), "level 1 feature missing");
@@ -85,7 +88,7 @@ fn class_features_are_filtered_to_the_character_s_level() {
 fn racial_traits_marked_hide_in_sheet_are_omitted() {
     let ch: vellum::ddb::Character =
         serde_json::from_str(include_str!("fixtures/srd_rogue.json")).unwrap();
-    let rows = vellum::content::rows_for(Tab::Feats, &ch, 8);
+    let rows = vellum::content::rows_for(Tab::Feats, &ch, &derive(&ch));
     let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
 
     assert!(names.contains(&"Fey Ancestry"));
@@ -101,7 +104,7 @@ fn a_spell_from_two_sources_appears_once() {
     // spell you can cast.
     let ch: vellum::ddb::Character =
         serde_json::from_str(include_str!("fixtures/srd_rogue.json")).unwrap();
-    let rows = vellum::content::rows_for(Tab::Spells, &ch, 8);
+    let rows = vellum::content::rows_for(Tab::Spells, &ch, &derive(&ch));
     let ff = rows.iter().filter(|r| r.name == "Faerie Fire").count();
     assert_eq!(ff, 1, "duplicate spell rows: {:?}", rows.iter().map(|r| &r.name).collect::<Vec<_>>());
     // Cantrips sort before levelled spells.
@@ -112,7 +115,7 @@ fn a_spell_from_two_sources_appears_once() {
 fn an_empty_snippet_falls_back_to_the_description() {
     let ch: vellum::ddb::Character =
         serde_json::from_str(include_str!("fixtures/srd_rogue.json")).unwrap();
-    let rows = vellum::content::rows_for(Tab::Feats, &ch, 8);
+    let rows = vellum::content::rows_for(Tab::Feats, &ch, &derive(&ch));
     let skulker = rows.iter().find(|r| r.name == "Skulker").expect("Skulker feat");
     assert!(!skulker.snippet.trim().is_empty(), "blank row in the list");
     assert!(skulker.snippet.contains("adept at slipping"));

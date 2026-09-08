@@ -85,6 +85,7 @@ src/
 ├── content.rs      payload -> uniform tab rows, + HTML-to-text
 ├── tabs.rs         the 22-row tabbed layout and detail overlay
 ├── portrait.rs     avatar -> amber half-blocks
+├── dice.rs         PCG32, dice expressions, advantage
 ├── session.rs      mutable play state, its own file, never the snapshot
 ├── device.rs       uConsole panel simulation (80x22) + amber palette
 ├── render.rs       flat sheet; phase 1's acceptance test
@@ -145,6 +146,7 @@ never touches the network.
 |---|---|
 | VITALS | portrait, ability scores, saves, senses, class notes |
 | SKILLS | all 18, proficient first, expertise marked `**` |
+| ROLL | initiative, 6 saves, 18 skills, death save — all rollable |
 | ACTIONS | class/race/feat actions with action-economy chips |
 | SPELLS | every bucket merged, cantrips first, deduplicated |
 | GEAR | inventory + custom items, `worn` / `attuned` / `x3` |
@@ -169,6 +171,12 @@ play
   r              rest — short or long
   s / f          death save success / failure  (only while dying)
 
+dice
+  enter          roll the selected row       (on the ROLL tab)
+  a / z          roll it with advantage / disadvantage
+  x              free-form dice: 2d6+3, 1d20-1, 4d6
+  l              roll log
+
   q  ctrl-c      quit
 ```
 
@@ -189,6 +197,37 @@ vellum show --tab spells
 vellum show --tab feats --scroll 15
 vellum show --tab actions --detail 6
 ```
+
+## Dice
+
+The ROLL tab lists everything a DM asks you for — initiative, saves, skills,
+death saves — as the same uniform list every other tab uses. So `/` filters it,
+and **`3` `/` `ste` `enter` `enter`** is the whole path from anywhere in the app
+to a rolled Stealth check. `a` and `z` roll the same row with advantage or
+disadvantage. `x` rolls free-form dice from any tab.
+
+Modifiers come from the derive layer, so a roll can never disagree with the
+sheet it is printed next to.
+
+The most recent roll stays on the status bar with its breakdown — at a table you
+read the result out, get asked "with what modifier?", and read it out again.
+`l` opens the full log; naturals 20 and 1 are coloured, because they are the two
+results everyone reacts to.
+
+**Death saves apply themselves.** Rolling one and then recording it by hand is
+double-entry that gets skipped mid-fight, so a roll on that row also updates the
+tally: a natural 20 brings you back at one hit point, a natural 1 counts as two
+failures, and 10 or better is a success.
+
+### On the randomness
+
+PCG32, seeded from the clock mixed with an allocation address, in about twenty
+lines and with no dependency. Range reduction uses rejection sampling rather
+than `%`, because modulo bias on a d20 is exactly the kind of unfair that
+players notice over a campaign. It is seedable, so every roll in the test suite
+is deterministic, and `tests/dice.rs` runs a chi-square over 200,000 d20 rolls
+plus a check that advantage and disadvantage land on their theoretical means of
+13.825 and 7.175.
 
 ## Play state
 
@@ -243,7 +282,7 @@ aesthetic, not a defect.
 
 ## Testing
 
-100 tests, and the interaction model is the point of the architecture: `app/state.rs`
+126 tests, and the interaction model is the point of the architecture: `app/state.rs`
 and `app/keys.rs` depend on neither ratatui nor a terminal, so every key a player
 can press is exercised headlessly — selection memory across tabs, filter scoping,
 the escape ladder, clamping when a filter shrinks the list under the cursor.
@@ -307,7 +346,8 @@ truecolor ANSI instead.
       filtering, amber theme, portrait
 - [x] **Phase 3** — play state: hit points, temp hp, conditions, exhaustion,
       death saves, rests, persisted separately from the snapshot
-- [ ] **Phase 4** — d20 roller wired to the row you are on
+- [x] **Phase 4** — dice: the ROLL tab, advantage, free-form expressions, a
+      roll log, and self-applying death saves
 - [ ] **Phase 3** — session layer: HP, conditions, death saves, local overrides
 The snapshot is immutable and session state lives in a separate file, so
 re-importing after a level-up never clobbers HP you are tracking mid-combat.

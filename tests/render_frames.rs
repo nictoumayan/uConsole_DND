@@ -72,7 +72,7 @@ fn hp_and_ac_are_on_screen_on_every_tab() {
 #[test]
 fn the_detail_overlay_shows_the_selected_row() {
     let mut a = app();
-    keys::handle(&mut a, KeyCode::Char('6'), KeyModifiers::NONE);
+    keys::handle(&mut a, KeyCode::Char(Tab::Feats.key()), KeyModifiers::NONE);
     keys::handle(&mut a, KeyCode::Enter, KeyModifiers::NONE);
     let s = screen(&mut a);
     assert!(s.to_uppercase().contains("ALERT"), "detail title missing: {s}");
@@ -82,7 +82,7 @@ fn the_detail_overlay_shows_the_selected_row() {
 #[test]
 fn the_filter_prompt_appears_in_the_footer_while_typing() {
     let mut a = app();
-    keys::handle(&mut a, KeyCode::Char('6'), KeyModifiers::NONE);
+    keys::handle(&mut a, KeyCode::Char(Tab::Feats.key()), KeyModifiers::NONE);
     keys::handle(&mut a, KeyCode::Char('/'), KeyModifiers::NONE);
     for c in "dark".chars() {
         keys::handle(&mut a, KeyCode::Char(c), KeyModifiers::NONE);
@@ -95,7 +95,7 @@ fn the_filter_prompt_appears_in_the_footer_while_typing() {
 #[test]
 fn an_empty_filter_result_says_so_rather_than_drawing_a_blank_pane() {
     let mut a = app();
-    keys::handle(&mut a, KeyCode::Char('6'), KeyModifiers::NONE);
+    keys::handle(&mut a, KeyCode::Char(Tab::Feats.key()), KeyModifiers::NONE);
     keys::handle(&mut a, KeyCode::Char('/'), KeyModifiers::NONE);
     for c in "zzzz".chars() {
         keys::handle(&mut a, KeyCode::Char(c), KeyModifiers::NONE);

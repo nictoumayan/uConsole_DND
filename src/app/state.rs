@@ -4,7 +4,8 @@
 //! — tab switching, selection memory, filtering, the detail overlay — is
 //! testable headlessly, which matters when the target hardware is in the post.
 
-use crate::content::{rows_for, Row, Tab};
+use crate::content::{rows_for, RollKind, Row, Tab};
+use crate::dice::{self, Advantage, Expr, Rng, Roll};
 use crate::ddb::Character;
 use crate::derive::Sheet;
 use crate::session::{Session, CONDITIONS};
@@ -24,6 +25,10 @@ pub enum Mode {
     Conditions,
     /// Short or long rest.
     Rest,
+    /// Typing a dice expression such as `2d6+3`.
+    Dice,
+    /// The roll log, full-screen.
+    RollLog,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -68,7 +73,18 @@ pub struct App {
     pub condition_cursor: usize,
     /// Surfaced in the footer. A save that fails silently is a session lost.
     pub last_error: Option<String>,
+
+    // -- dice --------------------------------------------------------------
+    rng: Rng,
+    /// Most recent first. Capped, because this is a session log and not a
+    /// campaign history.
+    pub rolls: Vec<Roll>,
+    pub dice_buffer: String,
+    pub dice_error: Option<String>,
 }
+
+/// How many rolls the log keeps.
+pub const ROLL_LOG_CAP: usize = 40;
 
 impl App {
     pub fn new(sheet: Sheet, character: Character, session: Session, session_path: PathBuf) -> App {
@@ -87,7 +103,98 @@ impl App {
             number_buffer: String::new(),
             condition_cursor: 0,
             last_error: None,
+            rng: Rng::from_entropy(),
+            rolls: Vec::new(),
+            dice_buffer: String::new(),
+            dice_error: None,
         }
+    }
+
+    /// Deterministic dice, for tests.
+    pub fn with_seed(mut self, seed: u64) -> Self {
+        self.rng = Rng::from_seed(seed);
+        self
+    }
+
+    // -- dice --------------------------------------------------------------
+
+    pub fn last_roll(&self) -> Option<&Roll> {
+        self.rolls.first()
+    }
+
+    fn record(&mut self, r: Roll) {
+        self.rolls.insert(0, r);
+        self.rolls.truncate(ROLL_LOG_CAP);
+    }
+
+    /// Roll whatever the cursor is on. Death saves also apply themselves —
+    /// rolling one and then having to record it by hand is the kind of
+    /// double-entry that gets skipped mid-fight.
+    pub fn roll_selected(&mut self, advantage: Advantage) {
+        if self.tab != Tab::Roll {
+            return;
+        }
+        let Some(row) = self.selected_row() else { return };
+        let Some(spec) = row.roll else { return };
+
+        let result = dice::roll(&mut self.rng, &row.name, Expr::d20(spec.modifier), advantage);
+
+        if spec.kind == RollKind::DeathSave {
+            // A natural 20 on a death save brings you back with one hit point;
+            // a natural 1 counts as two failures.
+            if result.is_nat20() {
+                self.session.clear_death_saves();
+                self.session.heal(1, self.max_hp());
+            } else if result.is_nat1() {
+                self.session.fail_death_save();
+                self.session.fail_death_save();
+            } else if result.total >= 10 {
+                self.session.succeed_death_save();
+            } else {
+                self.session.fail_death_save();
+            }
+            self.persist();
+        }
+
+        self.record(result);
+    }
+
+    pub fn start_dice(&mut self) {
+        self.dice_buffer.clear();
+        self.dice_error = None;
+        self.mode = Mode::Dice;
+    }
+
+    pub fn push_dice(&mut self, c: char) {
+        if self.dice_buffer.len() < 16 {
+            self.dice_buffer.push(c);
+            self.dice_error = None;
+        }
+    }
+
+    pub fn pop_dice(&mut self) {
+        self.dice_buffer.pop();
+        self.dice_error = None;
+    }
+
+    /// Stays in the prompt on a parse error so you can fix the typo instead of
+    /// retyping it.
+    pub fn commit_dice(&mut self, advantage: Advantage) {
+        match Expr::parse(&self.dice_buffer) {
+            Ok(expr) => {
+                let label = self.dice_buffer.clone();
+                let r = dice::roll(&mut self.rng, &label, expr, advantage);
+                self.record(r);
+                self.dice_buffer.clear();
+                self.dice_error = None;
+                self.mode = Mode::List;
+            }
+            Err(e) => self.dice_error = Some(e),
+        }
+    }
+
+    pub fn open_roll_log(&mut self) {
+        self.mode = Mode::RollLog;
     }
 
     // -- play state --------------------------------------------------------
@@ -206,7 +313,7 @@ impl App {
 
     /// Rows for the current tab with the filter applied.
     pub fn rows(&self) -> Vec<Row> {
-        let all = rows_for(self.tab, &self.character, self.sheet.total_level);
+        let all = rows_for(self.tab, &self.character, &self.sheet);
         if self.filter.is_empty() {
             return all;
         }
@@ -316,7 +423,12 @@ impl App {
                 self.number_buffer.clear();
                 self.mode = Mode::List;
             }
-            Mode::Conditions | Mode::Rest => self.mode = Mode::List,
+            Mode::Conditions | Mode::Rest | Mode::RollLog => self.mode = Mode::List,
+            Mode::Dice => {
+                self.dice_buffer.clear();
+                self.dice_error = None;
+                self.mode = Mode::List;
+            }
             Mode::Detail => {
                 self.mode = Mode::List;
                 self.detail_scroll = 0;

@@ -21,11 +21,13 @@ pub fn draw(f: &mut Frame, app: &mut App, portrait: Option<&Portrait>) {
     // The status bar grows a third row only when there is something on it —
     // conditions or death saves. Twenty-two rows is too few to reserve space
     // for a line that is usually blank.
-    let status_h = if app.session.condition_summary().is_empty() && !app.is_dying() {
-        2
-    } else {
-        3
-    };
+    let mut status_h = 2;
+    if !app.session.condition_summary().is_empty() || app.is_dying() {
+        status_h += 1;
+    }
+    if app.last_roll().is_some() {
+        status_h += 1;
+    }
     let [status, tabs, body, footer] = Layout::vertical([
         Constraint::Length(status_h),
         Constraint::Length(1),
@@ -39,6 +41,7 @@ pub fn draw(f: &mut Frame, app: &mut App, portrait: Option<&Portrait>) {
     app.page_rows = body.height.saturating_sub(2).max(1) as usize;
 
     match app.mode {
+        Mode::RollLog => draw_roll_log(f, app, body),
         Mode::Conditions => draw_conditions(f, app, body),
         Mode::Rest => draw_rest(f, body),
         Mode::Detail => draw_detail(f, app, body),
@@ -95,8 +98,26 @@ fn draw_status(f: &mut Frame, app: &App, area: Rect) {
 
     let mut lines = vec![Line::from(first), Line::from(second)];
 
-    // Third row: conditions, and death saves when they are live.
-    if area.height >= 3 {
+    // The most recent roll stays on screen. At a table you read the result
+    // out, get asked "with what modifier?", and read it out again.
+    if let Some(r) = app.last_roll() {
+        let mut spans = vec![
+            Span::styled(format!("{} ", r.label), theme::dim()),
+            Span::styled(r.breakdown(), theme::base()),
+        ];
+        if r.advantage != crate::dice::Advantage::Normal {
+            spans.push(Span::styled(format!(" ({})", r.advantage.label()), theme::dim()));
+        }
+        if r.is_nat20() {
+            spans.push(Span::styled("  NAT 20", theme::crit()));
+        } else if r.is_nat1() {
+            spans.push(Span::styled("  NAT 1", theme::danger()));
+        }
+        lines.push(Line::from(spans));
+    }
+
+    // Conditions, and death saves when they are live.
+    if lines.len() < area.height as usize {
         let mut third: Vec<Span> = Vec::new();
         if app.session.is_dead() {
             third.push(Span::styled("DEAD", theme::danger()));
@@ -339,14 +360,22 @@ fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
         Mode::Number(t) => format!("{}: {}_   ↵ apply   esc cancel", t.prompt(), app.number_buffer),
         Mode::Conditions => "j/k move   space toggle   +/- exhaustion   esc close".to_string(),
         Mode::Rest => "rest:  s short   l long   esc cancel".to_string(),
+        Mode::Dice => match &app.dice_error {
+            Some(e) => format!("roll: {}_   {e}", app.dice_buffer),
+            None => format!("roll: {}_   ↵ roll   esc cancel", app.dice_buffer),
+        },
+        Mode::RollLog => "esc close".to_string(),
         Mode::Detail => "esc back   j/k scroll   n/p next·prev row".to_string(),
         // While dying, the thing you need is the death-save keys, not the
         // navigation you already know.
         Mode::List if app.is_dying() => {
             "s success   f fail   h heal   c conditions   esc".to_string()
         }
+        Mode::List if app.tab == Tab::Roll => {
+            "↵ roll   a adv   z dis   / find   x dice   l log".to_string()
+        }
         Mode::List if app.is_list_tab() => {
-            "d dmg  h heal  c cond  r rest  / find  ↵ detail  q quit".to_string()
+            "d dmg  h heal  c cond  r rest  / find  ↵ detail  x dice".to_string()
         }
         Mode::List => "d dmg  h heal  t temp  c cond  r rest  i insp  q quit".to_string(),
     };
@@ -426,6 +455,49 @@ fn draw_conditions(f: &mut Frame, app: &App, area: Rect) {
         .areas(inner);
     f.render_widget(Paragraph::new(lines[..half].to_vec()), left);
     f.render_widget(Paragraph::new(lines[half..].to_vec()), right);
+}
+
+fn draw_roll_log(f: &mut Frame, app: &App, area: Rect) {
+    let block = content_block().title(Span::styled(" ROLL LOG ", theme::bright()));
+    let inner = block.inner(area);
+    f.render_widget(Clear, area);
+    f.render_widget(block, area);
+
+    if app.rolls.is_empty() {
+        f.render_widget(
+            Paragraph::new("nothing rolled yet").style(theme::dim()),
+            inner,
+        );
+        return;
+    }
+
+    let lines: Vec<Line> = app
+        .rolls
+        .iter()
+        .take(inner.height as usize)
+        .map(|r| {
+            Line::from(vec![
+                Span::styled(format!("{:<22}", trunc(&r.label, 22)), theme::base()),
+                Span::styled(format!("{:<6}", r.advantage.label()), theme::dim()),
+                Span::styled(format!("{:<28}", r.breakdown()), theme::dim()),
+                Span::styled(format!("{:>4}", r.total), roll_style(r)),
+            ])
+        })
+        .collect();
+    f.render_widget(Paragraph::new(lines), inner);
+}
+
+/// A natural 20 and a natural 1 are the two results everyone at the table
+/// reacts to, so they get their own colour rather than being a number you
+/// have to read carefully.
+fn roll_style(r: &crate::dice::Roll) -> Style {
+    if r.is_nat20() {
+        theme::crit()
+    } else if r.is_nat1() {
+        theme::danger()
+    } else {
+        theme::bright()
+    }
 }
 
 fn draw_rest(f: &mut Frame, area: Rect) {

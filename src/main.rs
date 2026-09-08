@@ -261,7 +261,7 @@ fn cmd_show(args: &[String]) -> Result<()> {
     let sheet = match opts.tab {
         None => render::render(&derived),
         Some(tab) => {
-            let rows = content::rows_for(tab, &ch, derived.total_level);
+            let rows = content::rows_for(tab, &ch, &derived);
             match opts.detail {
                 Some(n) => {
                     let row = rows

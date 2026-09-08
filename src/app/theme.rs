@@ -31,6 +31,12 @@ pub fn danger() -> Style {
     Style::default().fg(Color::Rgb(255, 90, 60)).bg(BG).add_modifier(Modifier::BOLD)
 }
 
+/// A natural 20 gets green — the one moment the amber palette is allowed to
+/// celebrate.
+pub fn crit() -> Style {
+    Style::default().fg(Color::Rgb(120, 255, 130)).bg(BG).add_modifier(Modifier::BOLD)
+}
+
 pub fn selection() -> Style {
     Style::default().fg(BG).bg(AMBER).add_modifier(Modifier::BOLD)
 }

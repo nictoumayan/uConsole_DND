@@ -2,6 +2,7 @@
 //! driven from tests without a terminal attached.
 
 use super::state::{App, Mode, NumberTarget};
+use crate::dice::Advantage;
 use crate::content::Tab;
 use ratatui::crossterm::event::{KeyCode, KeyModifiers};
 
@@ -29,6 +30,21 @@ pub fn handle(app: &mut App, code: KeyCode, mods: KeyModifiers) {
             KeyCode::Char(' ') | KeyCode::Enter => app.toggle_condition_at_cursor(),
             KeyCode::Char('+') | KeyCode::Char('=') | KeyCode::Right => app.adjust_at_cursor(1),
             KeyCode::Char('-') | KeyCode::Left => app.adjust_at_cursor(-1),
+            _ => {}
+        },
+
+        // A dice expression is text: `d` must not start a damage prompt and
+        // `1` must not jump tabs while you are typing "1d20".
+        Mode::Dice => match code {
+            KeyCode::Esc => app.escape(),
+            KeyCode::Enter => app.commit_dice(Advantage::Normal),
+            KeyCode::Backspace => app.pop_dice(),
+            KeyCode::Char(c) => app.push_dice(c),
+            _ => {}
+        },
+
+        Mode::RollLog => match code {
+            KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('l') => app.escape(),
             _ => {}
         },
 
@@ -74,6 +90,14 @@ pub fn handle(app: &mut App, code: KeyCode, mods: KeyModifiers) {
             KeyCode::Char('q') | KeyCode::Esc => app.escape(),
             KeyCode::Char('/') => app.start_filter(),
 
+            // Dice. `enter` rolls on the ROLL tab and opens the detail view
+            // everywhere else — each tab's enter does the obvious thing for
+            // the content it holds.
+            KeyCode::Char('a') => app.roll_selected(Advantage::Advantage),
+            KeyCode::Char('z') => app.roll_selected(Advantage::Disadvantage),
+            KeyCode::Char('x') => app.start_dice(),
+            KeyCode::Char('l') => app.open_roll_log(),
+
             // Play state. These work from any tab — mid-combat you should not
             // have to navigate somewhere before you can take damage.
             KeyCode::Char('d') => app.start_number(NumberTarget::Damage),
@@ -88,6 +112,9 @@ pub fn handle(app: &mut App, code: KeyCode, mods: KeyModifiers) {
             KeyCode::Char('s') if app.is_dying() => app.death_save(true),
             KeyCode::Char('f') if app.is_dying() => app.death_save(false),
 
+            KeyCode::Enter | KeyCode::Right if app.tab == Tab::Roll => {
+                app.roll_selected(Advantage::Normal)
+            }
             KeyCode::Enter | KeyCode::Right => app.open_detail(),
             KeyCode::Char('j') | KeyCode::Down => app.move_selection(1),
             KeyCode::Char('k') | KeyCode::Up => app.move_selection(-1),
@@ -99,7 +126,7 @@ pub fn handle(app: &mut App, code: KeyCode, mods: KeyModifiers) {
             KeyCode::BackTab => app.cycle_tab(false),
             // Digits jump straight to a tab. Cycling to the pane you want is
             // fine at a desk and wrong three seconds into your turn.
-            KeyCode::Char(c @ '1'..='7') => {
+            KeyCode::Char(c @ '1'..='8') => {
                 let i = c.to_digit(10).unwrap() as usize - 1;
                 app.go_to_tab(Tab::ALL[i]);
             }
