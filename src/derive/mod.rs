@@ -83,6 +83,17 @@ pub struct Sheet {
     /// Present only for a class that casts.
     pub spellcasting: Option<Spellcasting>,
     pub carrying_capacity: i32,
+    /// Languages, tools, armour and weapons. All present in the payload as
+    /// modifiers and, until now, displayed nowhere.
+    pub proficiencies: Proficiencies,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct Proficiencies {
+    pub languages: Vec<String>,
+    pub tools: Vec<String>,
+    pub armor: Vec<String>,
+    pub weapons: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -217,7 +228,60 @@ pub fn derive_with(ch: &Character, overrides: &AbilityOverrides) -> Sheet {
             .unwrap_or(30),
         spellcasting: derive_spellcasting(ch, pb, &scores),
         carrying_capacity: crate::rules::carrying_capacity(scores[Ability::Str.index()].score),
+        proficiencies: derive_proficiencies(ch),
     }
+}
+
+fn derive_proficiencies(ch: &Character) -> Proficiencies {
+    let mut p = Proficiencies::default();
+    let skills: Vec<&str> = SKILLS.iter().map(|(slug, _, _)| *slug).collect();
+
+    for m in ch.modifiers.all().filter(|m| m.is_unconditional()) {
+        let sub = m.sub_type.as_str();
+        match m.kind.as_str() {
+            "language" => p.languages.push(title_case(sub)),
+            "proficiency" => {
+                // Skills and saves have their own rows on the sheet already.
+                if skills.contains(&sub) || sub.ends_with("saving-throws") {
+                    continue;
+                }
+                if sub.contains("armor") || sub == "shields" {
+                    p.armor.push(title_case(sub));
+                } else if sub.contains("weapon")
+                    || WEAPON_SLUGS.contains(&sub)
+                {
+                    p.weapons.push(title_case(sub));
+                } else {
+                    p.tools.push(title_case(sub));
+                }
+            }
+            _ => {}
+        }
+    }
+    for list in [&mut p.languages, &mut p.tools, &mut p.armor, &mut p.weapons] {
+        list.sort();
+        list.dedup();
+    }
+    p
+}
+
+/// Specific weapons D&D Beyond names individually rather than by category.
+const WEAPON_SLUGS: [&str; 12] = [
+    "rapier", "scimitar", "shortsword", "whip", "crossbow-hand", "longsword",
+    "shortbow", "longbow", "dagger", "dart", "sling", "quarterstaff",
+];
+
+fn title_case(slug: &str) -> String {
+    slug.split('-')
+        .map(|w| {
+            let mut c = w.chars();
+            match c.next() {
+                Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn derive_spellcasting(ch: &Character, pb: i32, scores: &[Score; 6]) -> Option<Spellcasting> {

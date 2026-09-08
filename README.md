@@ -145,13 +145,13 @@ never touches the network.
 
 | tab | contents |
 |---|---|
-| VITALS | portrait, ability scores, saves, senses, class notes |
+| VITALS | portrait, scores and saves, then speed, senses, defences, languages |
 | SKILLS | all 18, proficient first, expertise marked `**` |
 | ROLL | initiative, 6 saves, 18 skills, death save — all rollable |
 | ACTIONS | class/race/feat actions with action-economy chips |
 | SPELLS | every bucket merged, cantrips first, deduplicated |
 | GEAR | inventory + custom items, `worn` / `attuned` / `x3` |
-| FEATS | feats, class features filtered to your level, racial traits |
+| FEATS | feats, class features filtered to your level, racial traits, proficiencies |
 | NOTES | background, personality, bonds, flaws, backstory |
 
 ### Keys
@@ -372,9 +372,22 @@ amber palette. They render red, which is exactly why they read instantly.
 ## The portrait
 
 `vellum fetch` caches the avatar next to the snapshot, so `show` stays offline.
-It renders as amber phosphor using U+2580 UPPER HALF BLOCK — foreground is the
-top pixel, background the bottom — which gives two near-square pixels per cell.
-At 20x7 cells that is a 20x14 image.
+
+A terminal cell carries two colours. Half blocks spend that on two vertical
+pixels; **quadrant** blocks spend it on four, by picking the glyph whose filled
+quadrants match which of a 2x2 subgrid are the brighter of the cell's own two
+levels. That doubles horizontal resolution for nothing, and it works here
+precisely because the image is monochrome — two levels per cell is a real
+constraint on a colour photo and almost none on an amber one.
+
+At 24x12 cells that is a 48x24 image, three times the detail of the half-block
+version it replaced. The split point is the midpoint of each cell's own range
+rather than a global threshold, so a dark cell keeps its internal detail
+instead of collapsing to black, and a flat cell renders as solid background
+rather than a full block whose two colours happen to match.
+
+Twenty-four wide by twelve tall renders square: a subcell is about twice as
+tall as it is wide, so `cols == rows * 2`.
 
 Colour is deliberately discarded. A full-colour photo in the middle of an amber
 sheet looks like a mistake; luminance mapped onto the amber ramp looks like a
@@ -388,7 +401,7 @@ aesthetic, not a defect.
 
 ## Testing
 
-174 tests, and the interaction model is the point of the architecture: `app/state.rs`
+179 tests, and the interaction model is the point of the architecture: `app/state.rs`
 and `app/keys.rs` depend on neither ratatui nor a terminal, so every key a player
 can press is exercised headlessly — selection memory across tabs, filter scoping,
 the escape ladder, clamping when a filter shrinks the list under the cursor.

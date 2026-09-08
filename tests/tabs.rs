@@ -113,3 +113,20 @@ fn detail_view_also_fits_the_panel() {
         }
     }
 }
+
+#[test]
+fn proficiency_lists_appear_on_the_feats_tab() {
+    // They are reference material you look up rarely, so they belong on a
+    // scrollable tab rather than crowding the sixteen rows of the vitals pane.
+    let ch = character();
+    let sheet = derive(&ch);
+    let rows = vellum::content::rows_for(Tab::Feats, &ch, &sheet);
+    let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
+    assert!(
+        names.iter().any(|n| n.contains("proficiency")),
+        "no proficiency rows: {names:?}"
+    );
+    // And they carry their contents, not just a heading.
+    let row = rows.iter().find(|r| r.name.contains("proficiency")).unwrap();
+    assert!(!row.snippet.trim().is_empty());
+}

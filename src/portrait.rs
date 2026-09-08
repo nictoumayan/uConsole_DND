@@ -1,10 +1,13 @@
 //! The character portrait, rendered as amber phosphor.
 //!
-//! Terminal cells are roughly twice as tall as they are wide, so a cell drawn
-//! as U+2580 UPPER HALF BLOCK with the foreground painted as the top pixel and
-//! the background as the bottom one gives two near-square pixels per cell. A
-//! 16x8 cell portrait is therefore a 16x16 image — low-res on purpose, and it
-//! reads as a face at arm's length on a 5" panel.
+//! A terminal cell can carry two colours: a foreground and a background. Half
+//! blocks (U+2580) spend that on two vertical pixels. **Quadrant** blocks
+//! spend it on four — a 2x2 subgrid — by picking the glyph whose filled
+//! quadrants match which of the four pixels are the brighter of two levels.
+//!
+//! That doubles horizontal resolution for nothing, and it works here precisely
+//! because the image is monochrome: two levels per cell is a real constraint
+//! on a colour photo and almost none on an amber one.
 //!
 //! Colour is deliberately thrown away. A full-colour photo in the middle of an
 //! amber phosphor sheet looks like a mistake; luminance mapped onto the amber
@@ -18,8 +21,14 @@ const AMBER: (u8, u8, u8) = (255, 176, 0);
 /// Densest-to-lightest ramp for terminals without truecolour.
 const RAMP: &[u8] = b"@%#*+=-:. ";
 
-/// One character cell: the RGB of its top pixel and of its bottom pixel.
-pub type Cell = ((u8, u8, u8), (u8, u8, u8));
+/// Indexed by a 4-bit mask of which quadrants are the brighter level, in the
+/// order top-left, top-right, bottom-left, bottom-right.
+const QUADRANTS: [char; 16] = [
+    ' ', '▘', '▝', '▀', '▖', '▌', '▞', '▛', '▗', '▚', '▐', '▜', '▄', '▙', '▟', '█',
+];
+
+/// One character cell: its glyph, foreground and background.
+pub type Cell = (char, (u8, u8, u8), (u8, u8, u8));
 
 pub struct Portrait {
     pub cols: usize,
@@ -29,36 +38,51 @@ pub struct Portrait {
 }
 
 impl Portrait {
-    /// Decode and downsample. `cols` x `rows` are character cells; the sampled
-    /// image is `cols` x `rows * 2` pixels.
+    /// Decode and downsample to a 2x2 subgrid per cell: the sampled image is
+    /// `cols * 2` wide by `rows * 2` tall.
     pub fn decode(bytes: &[u8], cols: usize, rows: usize) -> Result<Portrait> {
         let img = image::load_from_memory(bytes).context("decoding portrait image")?;
-        let target_h = (rows * 2) as u32;
         let small = img.resize_exact(
-            cols as u32,
-            target_h,
-            image::imageops::FilterType::Triangle,
+            (cols * 2) as u32,
+            (rows * 2) as u32,
+            // Lanczos over Triangle: at this size every pixel is load-bearing
+            // and the sharper kernel keeps edges that Triangle smears.
+            image::imageops::FilterType::Lanczos3,
         );
         let gray = small.to_luma8();
         Ok(Portrait { cols, rows, lum: gray.into_raw() })
     }
 
+    fn px_w(&self) -> usize {
+        self.cols * 2
+    }
+
     fn at(&self, x: usize, y: usize) -> u8 {
-        *self.lum.get(y * self.cols + x).unwrap_or(&0)
+        *self.lum.get(y * self.px_w() + x).unwrap_or(&0)
+    }
+
+    /// The four subpixels of one cell, clockwise from top-left.
+    fn quad(&self, col: usize, row: usize) -> [u8; 4] {
+        let (x, y) = (col * 2, row * 2);
+        [
+            self.at(x, y),
+            self.at(x + 1, y),
+            self.at(x, y + 1),
+            self.at(x + 1, y + 1),
+        ]
     }
 
     /// One line per cell row, using half-blocks and truecolour. `contrast`
     /// lifts the midtones — a 16x16 face loses a lot without it.
     pub fn to_amber_lines(&self, contrast: f32) -> Vec<String> {
-        (0..self.rows)
+        self.to_cells(contrast)
+            .into_iter()
             .map(|row| {
                 let mut line = String::new();
-                for x in 0..self.cols {
-                    let top = amber(self.at(x, row * 2), contrast);
-                    let bottom = amber(self.at(x, row * 2 + 1), contrast);
+                for (glyph, fg, bg) in row {
                     line.push_str(&format!(
-                        "\x1b[38;2;{};{};{}m\x1b[48;2;{};{};{}m▀",
-                        top.0, top.1, top.2, bottom.0, bottom.1, bottom.2
+                        "\x1b[38;2;{};{};{}m\x1b[48;2;{};{};{}m{glyph}",
+                        fg.0, fg.1, fg.2, bg.0, bg.1, bg.2
                     ));
                 }
                 line.push_str("\x1b[0m");
@@ -67,38 +91,52 @@ impl Portrait {
             .collect()
     }
 
-    /// Per-cell (top, bottom) RGB pairs, one inner Vec per cell row.
+    /// Per-cell glyph plus its foreground and background colour.
     ///
     /// Returned as plain colour tuples rather than styled spans so this module
     /// stays free of any UI dependency — the TUI turns these into spans, the
     /// CLI turns them into ANSI, neither knows about the other.
     pub fn to_cells(&self, contrast: f32) -> Vec<Vec<Cell>> {
         (0..self.rows)
-            .map(|row| {
-                (0..self.cols)
-                    .map(|x| {
-                        (
-                            amber(self.at(x, row * 2), contrast),
-                            amber(self.at(x, row * 2 + 1), contrast),
-                        )
-                    })
-                    .collect()
-            })
+            .map(|row| (0..self.cols).map(|col| self.cell(col, row, contrast)).collect())
             .collect()
     }
 
-    /// ASCII fallback. Averages the two half-cells, so it is half the vertical
-    /// resolution — but it works on any terminal, and it is the more
-    /// authentically retro of the two.
+    fn cell(&self, col: usize, row: usize, contrast: f32) -> Cell {
+        let q = self.quad(col, row);
+        let lo = *q.iter().min().unwrap();
+        let hi = *q.iter().max().unwrap();
+
+        // A flat cell needs no glyph at all — solid background reads cleaner
+        // than a full block whose two colours happen to match.
+        if hi.saturating_sub(lo) < 8 {
+            let c = amber(hi, contrast);
+            return (' ', c, c);
+        }
+
+        // Split at the midpoint of the cell's own range rather than a global
+        // threshold, so a dark cell keeps its internal detail instead of
+        // collapsing to black.
+        let mid = (lo as u16 + hi as u16) / 2;
+        let mut bits = 0u8;
+        for (i, v) in q.iter().enumerate() {
+            if *v as u16 > mid {
+                bits |= 1 << i;
+            }
+        }
+        (QUADRANTS[bits as usize], amber(hi, contrast), amber(lo, contrast))
+    }
+
+    /// ASCII fallback for terminals without truecolour: one character per
+    /// cell, averaging the four subpixels.
     pub fn to_ascii_lines(&self) -> Vec<String> {
         (0..self.rows)
             .map(|row| {
                 (0..self.cols)
-                    .map(|x| {
-                        let avg =
-                            (self.at(x, row * 2) as u16 + self.at(x, row * 2 + 1) as u16) / 2;
-                        let idx = (avg as usize * (RAMP.len() - 1)) / 255;
-                        RAMP[idx] as char
+                    .map(|col| {
+                        let q = self.quad(col, row);
+                        let avg = q.iter().map(|v| *v as u16).sum::<u16>() / 4;
+                        RAMP[(avg as usize * (RAMP.len() - 1)) / 255] as char
                     })
                     .collect()
             })
@@ -149,17 +187,59 @@ mod tests {
     }
 
     #[test]
-    fn decodes_and_downsamples_to_requested_cells() {
+    fn decodes_to_a_two_by_two_subgrid_per_cell() {
         let p = Portrait::decode(&checkerboard(), 8, 4).unwrap();
         assert_eq!(p.cols, 8);
         assert_eq!(p.rows, 4);
-        assert_eq!(p.lum.len(), 8 * 8, "rows*2 pixels tall");
+        assert_eq!(p.lum.len(), 16 * 8, "cols*2 wide by rows*2 tall");
+    }
+
+    #[test]
+    fn quadrant_glyphs_cover_all_sixteen_masks() {
+        assert_eq!(QUADRANTS.len(), 16);
+        assert_eq!(QUADRANTS[0b0000], ' ');
+        assert_eq!(QUADRANTS[0b1111], '█');
+        assert_eq!(QUADRANTS[0b0011], '▀', "top-left + top-right is the upper half");
+        assert_eq!(QUADRANTS[0b1100], '▄', "bottom pair is the lower half");
+        assert_eq!(QUADRANTS[0b0101], '▌', "left pair is the left half");
+    }
+
+    #[test]
+    fn a_flat_cell_renders_as_solid_background() {
+        // No glyph beats a full block whose two colours happen to match.
+        let mut img = image::GrayImage::new(4, 4);
+        for p in img.pixels_mut() {
+            *p = image::Luma([180]);
+        }
+        let mut out = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::ImageLuma8(img)
+            .write_to(&mut out, image::ImageFormat::Png)
+            .unwrap();
+        let p = Portrait::decode(&out.into_inner(), 2, 2).unwrap();
+        for row in p.to_cells(1.0) {
+            for (glyph, fg, bg) in row {
+                assert_eq!(glyph, ' ');
+                assert_eq!(fg, bg);
+            }
+        }
     }
 
     #[test]
     fn amber_lines_are_one_per_cell_row() {
         let p = Portrait::decode(&checkerboard(), 8, 4).unwrap();
         assert_eq!(p.to_amber_lines(1.0).len(), 4);
+    }
+
+    #[test]
+    fn cells_carry_a_glyph_per_cell() {
+        let p = Portrait::decode(&checkerboard(), 10, 5).unwrap();
+        let cells = p.to_cells(1.0);
+        assert_eq!(cells.len(), 5);
+        assert!(cells.iter().all(|r| r.len() == 10));
+        assert!(
+            cells.iter().flatten().all(|(g, _, _)| QUADRANTS.contains(g)),
+            "every glyph must come from the quadrant set"
+        );
     }
 
     #[test]

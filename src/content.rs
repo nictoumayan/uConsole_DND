@@ -173,7 +173,7 @@ pub fn rows_for(tab: Tab, ch: &Character, sheet: &Sheet) -> Vec<Row> {
         Tab::Actions => actions(ch),
         Tab::Spells => spells(ch),
         Tab::Gear => gear(ch),
-        Tab::Feats => feats(ch, sheet.total_level),
+        Tab::Feats => feats(ch, sheet, sheet.total_level),
         Tab::Notes => notes(ch),
     }
 }
@@ -368,8 +368,28 @@ fn gear(ch: &Character) -> Vec<Row> {
     out
 }
 
-fn feats(ch: &Character, level: i32) -> Vec<Row> {
+fn feats(ch: &Character, sheet: &Sheet, level: i32) -> Vec<Row> {
     let mut out = Vec::new();
+
+    // Proficiencies are reference material you look up rarely, so they belong
+    // on a scrollable tab rather than crowding the vitals pane.
+    for (label, items) in [
+        ("Weapons", &sheet.proficiencies.weapons),
+        ("Armor", &sheet.proficiencies.armor),
+        ("Tools", &sheet.proficiencies.tools),
+        ("Languages", &sheet.proficiencies.languages),
+    ] {
+        if items.is_empty() {
+            continue;
+        }
+        let joined = items.join(", ");
+        out.push(Row::new(
+            format!("{label} proficiency"),
+            "proficient",
+            &joined,
+            &joined,
+        ));
+    }
 
     for f in &ch.feats {
         let d = &f.definition;

@@ -73,6 +73,13 @@ fn hp_and_ac_are_on_screen_on_every_tab() {
 fn the_detail_overlay_shows_the_selected_row() {
     let mut a = app();
     keys::handle(&mut a, KeyCode::Char(Tab::Feats.key()), KeyModifiers::NONE);
+    // Filter to the row rather than assuming it is first: what sits at the top
+    // of a tab is a layout decision, not something a detail test should pin.
+    keys::handle(&mut a, KeyCode::Char('/'), KeyModifiers::NONE);
+    for c in "alert".chars() {
+        keys::handle(&mut a, KeyCode::Char(c), KeyModifiers::NONE);
+    }
+    keys::handle(&mut a, KeyCode::Enter, KeyModifiers::NONE);
     keys::handle(&mut a, KeyCode::Enter, KeyModifiers::NONE);
     let s = screen(&mut a);
     assert!(s.to_uppercase().contains("ALERT"), "detail title missing: {s}");

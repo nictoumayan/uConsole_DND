@@ -14,7 +14,7 @@ fn main() -> anyhow::Result<()> {
         .get(1)
         .filter(|p| !p.is_empty())
         .and_then(|p| std::fs::read(p).ok())
-        .and_then(|b| Portrait::decode(&b, 20, 8).ok());
+        .and_then(|b| Portrait::decode(&b, 24, 12).ok());
 
     let sheet = vellum::derive::derive(&ch);
     let session = vellum::session::Session::seed(

@@ -211,3 +211,21 @@ fn a_wisdom_correction_moves_passive_perception() {
     assert_eq!(s.modifier(vellum::derive::tables::Ability::Wis), 3);
     assert_eq!(s.passive_perception, 10 + skill(&s, "Perception"));
 }
+
+#[test]
+fn proficiencies_are_split_by_kind_and_exclude_skills_and_saves() {
+    let ch: Character = serde_json::from_str(include_str!("fixtures/srd_rogue.json")).unwrap();
+    let p = &derive(&ch).proficiencies;
+    // Skills and saving throws have their own rows; they must not leak in here.
+    let all: Vec<&String> = p
+        .languages
+        .iter()
+        .chain(&p.tools)
+        .chain(&p.armor)
+        .chain(&p.weapons)
+        .collect();
+    for banned in ["Stealth", "Acrobatics", "Dexterity Saving Throws"] {
+        assert!(!all.iter().any(|s| s.as_str() == banned), "{banned} leaked into proficiencies");
+    }
+    assert!(all.iter().all(|s| !s.contains('-')), "slugs should be title-cased: {all:?}");
+}

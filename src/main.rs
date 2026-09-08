@@ -218,7 +218,7 @@ fn load_portrait(id: i64, cols: usize, rows: usize) -> Option<Portrait> {
 fn cmd_tui(id_arg: Option<&str>) -> Result<()> {
     let id = resolve_id(id_arg)?;
     let ch = load(id)?;
-    let portrait = load_portrait(id, 20, 8);
+    let portrait = load_portrait(id, 24, 12);
 
     paths::ensure_dir()?;
     let session_path = paths::session_path(id)?;

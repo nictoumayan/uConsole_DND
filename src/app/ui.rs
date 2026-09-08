@@ -280,11 +280,19 @@ fn draw_vitals(f: &mut Frame, app: &App, area: Rect, portrait: Option<&Portrait>
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    let [left, right] = Layout::horizontal([Constraint::Length(22), Constraint::Min(10)])
-        .areas(inner);
+    // Three columns, not two. Two left roughly a third of an eighty-column
+    // panel empty, which on a five-inch screen is the most expensive kind of
+    // whitespace there is.
+    let [left, mid, right] = Layout::horizontal([
+        Constraint::Length(26),
+        Constraint::Length(19),
+        Constraint::Min(16),
+    ])
+    .areas(inner);
 
-    // Portrait: one span per cell, foreground the top pixel and background the
-    // bottom, so each cell carries two near-square pixels.
+    // -- portrait ----------------------------------------------------------
+    // 24 cells wide by 12 tall renders square: each cell holds a 2x2 subgrid
+    // and a subcell is about twice as tall as it is wide, so cols == rows * 2.
     let art: Vec<Line> = match portrait {
         Some(p) => p
             .to_cells(1.6)
@@ -292,12 +300,12 @@ fn draw_vitals(f: &mut Frame, app: &App, area: Rect, portrait: Option<&Portrait>
             .map(|row| {
                 Line::from(
                     row.into_iter()
-                        .map(|(top, bot)| {
+                        .map(|(glyph, fg, bg)| {
                             Span::styled(
-                                "▀",
+                                glyph.to_string(),
                                 Style::default()
-                                    .fg(ratatui::style::Color::Rgb(top.0, top.1, top.2))
-                                    .bg(ratatui::style::Color::Rgb(bot.0, bot.1, bot.2)),
+                                    .fg(ratatui::style::Color::Rgb(fg.0, fg.1, fg.2))
+                                    .bg(ratatui::style::Color::Rgb(bg.0, bg.1, bg.2)),
                             )
                         })
                         .collect::<Vec<_>>(),
@@ -305,13 +313,14 @@ fn draw_vitals(f: &mut Frame, app: &App, area: Rect, portrait: Option<&Portrait>
             })
             .collect(),
         None => vec![
-            Line::styled("  no portrait cached", theme::dim()),
-            Line::styled("  run `vellum fetch`", theme::dim()),
+            Line::styled("no portrait cached", theme::dim()),
+            Line::styled("run `vellum fetch`", theme::dim()),
         ],
     };
     f.render_widget(Paragraph::new(art), left);
 
-    let mut lines: Vec<Line> = s
+    // -- scores and saves --------------------------------------------------
+    let mut col2: Vec<Line> = s
         .scores
         .iter()
         .map(|sc| {
@@ -322,50 +331,77 @@ fn draw_vitals(f: &mut Frame, app: &App, area: Rect, portrait: Option<&Portrait>
             ])
         })
         .collect();
-    lines.push(Line::from(""));
-    lines.push(Line::styled("SAVES", theme::dim()));
-    let saves: Vec<String> = s
-        .saves
-        .iter()
-        .map(|e| format!("{} {:+}{}", e.name, e.value, if e.proficient { "*" } else { "" }))
-        .collect();
-    for chunk in saves.chunks(3) {
-        lines.push(Line::styled(chunk.join("  "), theme::base()));
+    col2.push(Line::from(""));
+    col2.push(Line::styled("SAVES", theme::dim()));
+    for e in &s.saves {
+        col2.push(Line::from(vec![
+            Span::styled(format!("{}  ", e.name), theme::dim()),
+            Span::styled(
+                format!("{:+}{}", e.value, if e.proficient { "*" } else { "" }),
+                if e.proficient { theme::bright() } else { theme::base() },
+            ),
+        ]));
     }
-    lines.push(Line::from(""));
+    f.render_widget(Paragraph::new(col2), mid);
 
-    // Speed comes from the rules engine, not the sheet: exhaustion and several
-    // conditions change it during play.
+    // -- everything else ---------------------------------------------------
+    let mut col3: Vec<Line> = Vec::new();
     let speed = app.effective_speed();
-    let speed_style = if speed == s.walking_speed { theme::base() } else { theme::danger() };
-    lines.push(Line::styled(
-        if speed == s.walking_speed {
-            format!("Speed {speed} ft")
-        } else {
-            format!("Speed {speed} ft  (base {})", s.walking_speed)
-        },
-        speed_style,
-    ));
+    col3.push(Line::from(vec![
+        Span::styled(format!("{:<11}", "Speed"), theme::dim()),
+        Span::styled(
+            format!("{speed} ft"),
+            if speed == s.walking_speed { theme::base() } else { theme::danger() },
+        ),
+        Span::styled(
+            if speed == s.walking_speed { String::new() } else { format!("  base {}", s.walking_speed) },
+            theme::dim(),
+        ),
+    ]));
+    for (sense, range) in &s.senses {
+        col3.push(Line::from(vec![
+            // "Darkvision" is ten characters; a nine-wide field ate the space.
+            Span::styled(format!("{:<11}", cap(sense)), theme::dim()),
+            Span::styled(format!("{range} ft"), theme::base()),
+        ]));
+    }
+    col3.push(Line::from(vec![
+        Span::styled(format!("{:<11}", "Carry"), theme::dim()),
+        Span::styled(format!("{} lb", s.carrying_capacity), theme::base()),
+    ]));
     if let Some(sc) = &s.spellcasting {
-        lines.push(Line::styled(
-            format!("Spell DC {}  atk {:+}  {}", sc.save_dc, sc.attack_bonus, sc.ability.abbrev()),
-            theme::base(),
-        ));
+        col3.push(Line::from(vec![
+            Span::styled(format!("{:<11}", "Spell DC"), theme::dim()),
+            Span::styled(format!("{}  atk {:+}", sc.save_dc, sc.attack_bonus), theme::base()),
+        ]));
     }
     if app.is_incapacitated() {
-        lines.push(Line::styled("INCAPACITATED", theme::danger()));
+        col3.push(Line::styled("INCAPACITATED", theme::danger()));
     }
 
-    for (sense, range) in &s.senses {
-        lines.push(Line::styled(format!("{} {} ft", cap(sense), range), theme::base()));
-    }
     for n in &s.class_notes {
-        lines.push(Line::styled(n.clone(), theme::bright()));
+        col3.push(Line::styled(n.clone(), theme::bright()));
     }
-    if !s.advantages.is_empty() {
-        lines.push(Line::styled(format!("ADV: {}", s.advantages.join(", ")), theme::dim()));
-    }
-    f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), right);
+
+    // Label and value share a line, and there are no blank spacers: sixteen
+    // rows does not stretch to a heading of its own per section. Bulky
+    // proficiency lists live on the FEATS tab instead.
+    let mut section = |label: &str, items: &[String]| {
+        if items.is_empty() {
+            return;
+        }
+        col3.push(Line::from(""));
+        col3.push(Line::from(vec![
+            Span::styled(format!("{label:<7}"), theme::dim()),
+            Span::styled(items.join(", "), theme::base()),
+        ]));
+    };
+    section("ADV", &s.advantages);
+    section("IMMUNE", &s.immunities);
+    section("RESIST", &s.resistances);
+    section("LANG", &s.proficiencies.languages);
+
+    f.render_widget(Paragraph::new(col3).wrap(Wrap { trim: true }), right);
 }
 
 fn draw_skills(f: &mut Frame, app: &App, area: Rect) {

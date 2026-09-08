@@ -217,6 +217,20 @@
         "value": null,
         "isGranted": false,
         "restriction": ""
+      },
+      {
+        "type": "language",
+        "subType": "common",
+        "value": null,
+        "isGranted": true,
+        "restriction": ""
+      },
+      {
+        "type": "language",
+        "subType": "elvish",
+        "value": null,
+        "isGranted": false,
+        "restriction": ""
       }
     ],
     "class": [
@@ -279,6 +293,34 @@
       {
         "type": "advantage",
         "subType": "initiative",
+        "value": null,
+        "isGranted": true,
+        "restriction": ""
+      },
+      {
+        "type": "proficiency",
+        "subType": "light-armor",
+        "value": null,
+        "isGranted": true,
+        "restriction": ""
+      },
+      {
+        "type": "proficiency",
+        "subType": "simple-weapons",
+        "value": null,
+        "isGranted": true,
+        "restriction": ""
+      },
+      {
+        "type": "proficiency",
+        "subType": "shortsword",
+        "value": null,
+        "isGranted": true,
+        "restriction": ""
+      },
+      {
+        "type": "proficiency",
+        "subType": "thieves-tools",
         "value": null,
         "isGranted": true,
         "restriction": ""
