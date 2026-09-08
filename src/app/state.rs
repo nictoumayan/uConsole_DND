@@ -7,6 +7,8 @@
 use crate::content::{rows_for, Row, Tab};
 use crate::ddb::Character;
 use crate::derive::Sheet;
+use crate::session::{Session, CONDITIONS};
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -16,6 +18,29 @@ pub enum Mode {
     Detail,
     /// Typing into the filter box; keys are text, not commands.
     Filter,
+    /// Typing a number — damage, healing, temporary hit points.
+    Number(NumberTarget),
+    /// The condition toggles.
+    Conditions,
+    /// Short or long rest.
+    Rest,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NumberTarget {
+    Damage,
+    Heal,
+    TempHp,
+}
+
+impl NumberTarget {
+    pub fn prompt(self) -> &'static str {
+        match self {
+            NumberTarget::Damage => "damage",
+            NumberTarget::Heal => "heal",
+            NumberTarget::TempHp => "temp hp",
+        }
+    }
 }
 
 pub struct App {
@@ -32,10 +57,21 @@ pub struct App {
     /// Rows visible in the content pane; set by the renderer each frame so
     /// paging keys move by a real screenful.
     pub page_rows: usize,
+
+    // -- play state --------------------------------------------------------
+    pub session: Session,
+    session_path: PathBuf,
+    /// Digits typed so far in `Mode::Number`.
+    pub number_buffer: String,
+    /// Cursor in the conditions overlay. Index `CONDITIONS.len()` is the
+    /// exhaustion row, which is a counter rather than a toggle.
+    pub condition_cursor: usize,
+    /// Surfaced in the footer. A save that fails silently is a session lost.
+    pub last_error: Option<String>,
 }
 
 impl App {
-    pub fn new(sheet: Sheet, character: Character) -> App {
+    pub fn new(sheet: Sheet, character: Character, session: Session, session_path: PathBuf) -> App {
         App {
             sheet,
             character,
@@ -46,7 +82,126 @@ impl App {
             filter: String::new(),
             quit: false,
             page_rows: 15,
+            session,
+            session_path,
+            number_buffer: String::new(),
+            condition_cursor: 0,
+            last_error: None,
         }
+    }
+
+    // -- play state --------------------------------------------------------
+
+    pub fn max_hp(&self) -> i32 {
+        self.sheet.hp.max.value
+    }
+
+    pub fn current_hp(&self) -> i32 {
+        self.session.current_hp(self.max_hp())
+    }
+
+    /// Written after every mutation rather than on quit: a uConsole running
+    /// off two 18650s can lose power mid-session, and re-entering an hour of
+    /// combat tracking is worse than a few milliseconds of IO.
+    fn persist(&mut self) {
+        if let Err(e) = self.session.save(&self.session_path) {
+            self.last_error = Some(format!("could not save session: {e}"));
+        } else {
+            self.last_error = None;
+        }
+    }
+
+    pub fn start_number(&mut self, target: NumberTarget) {
+        self.number_buffer.clear();
+        self.mode = Mode::Number(target);
+    }
+
+    pub fn push_digit(&mut self, c: char) {
+        if c.is_ascii_digit() && self.number_buffer.len() < 4 {
+            self.number_buffer.push(c);
+        }
+    }
+
+    pub fn pop_digit(&mut self) {
+        self.number_buffer.pop();
+    }
+
+    pub fn commit_number(&mut self) {
+        let Mode::Number(target) = self.mode else {
+            return;
+        };
+        let amount: i32 = self.number_buffer.parse().unwrap_or(0);
+        let max = self.max_hp();
+        match target {
+            NumberTarget::Damage => self.session.take_damage(amount, max),
+            NumberTarget::Heal => self.session.heal(amount, max),
+            NumberTarget::TempHp => self.session.set_temp_hp(amount),
+        }
+        self.number_buffer.clear();
+        self.mode = Mode::List;
+        self.persist();
+    }
+
+    pub fn open_conditions(&mut self) {
+        self.condition_cursor = 0;
+        self.mode = Mode::Conditions;
+    }
+
+    pub fn move_condition_cursor(&mut self, delta: isize) {
+        // One past the conditions is the exhaustion counter.
+        let len = CONDITIONS.len() + 1;
+        let next = (self.condition_cursor as isize + delta).rem_euclid(len as isize);
+        self.condition_cursor = next as usize;
+    }
+
+    pub fn on_exhaustion_row(&self) -> bool {
+        self.condition_cursor == CONDITIONS.len()
+    }
+
+    pub fn toggle_condition_at_cursor(&mut self) {
+        if self.on_exhaustion_row() {
+            // Toggling a counter is meaningless; step it instead.
+            self.session.adjust_exhaustion(1);
+        } else {
+            let name = CONDITIONS[self.condition_cursor];
+            self.session.toggle_condition(name);
+        }
+        self.persist();
+    }
+
+    pub fn adjust_at_cursor(&mut self, delta: i8) {
+        if self.on_exhaustion_row() {
+            self.session.adjust_exhaustion(delta);
+            self.persist();
+        }
+    }
+
+    pub fn death_save(&mut self, success: bool) {
+        if success {
+            self.session.succeed_death_save();
+        } else {
+            self.session.fail_death_save();
+        }
+        self.persist();
+    }
+
+    pub fn is_dying(&self) -> bool {
+        self.session.is_dying(self.max_hp())
+    }
+
+    pub fn toggle_inspiration(&mut self) {
+        self.session.inspiration = !self.session.inspiration;
+        self.persist();
+    }
+
+    pub fn rest(&mut self, long: bool) {
+        if long {
+            self.session.long_rest();
+        } else {
+            self.session.short_rest();
+        }
+        self.mode = Mode::List;
+        self.persist();
     }
 
     /// Rows for the current tab with the filter applied.
@@ -154,9 +309,14 @@ impl App {
     }
 
     /// Esc backs out one layer rather than quitting outright:
-    /// detail -> filtered list -> unfiltered list -> quit.
+    /// overlay -> detail -> filtered list -> unfiltered list -> quit.
     pub fn escape(&mut self) {
         match self.mode {
+            Mode::Number(_) => {
+                self.number_buffer.clear();
+                self.mode = Mode::List;
+            }
+            Mode::Conditions | Mode::Rest => self.mode = Mode::List,
             Mode::Detail => {
                 self.mode = Mode::List;
                 self.detail_scroll = 0;

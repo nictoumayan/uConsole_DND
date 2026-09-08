@@ -85,6 +85,7 @@ src/
 ├── content.rs      payload -> uniform tab rows, + HTML-to-text
 ├── tabs.rs         the 22-row tabbed layout and detail overlay
 ├── portrait.rs     avatar -> amber half-blocks
+├── session.rs      mutable play state, its own file, never the snapshot
 ├── device.rs       uConsole panel simulation (80x22) + amber palette
 ├── render.rs       flat sheet; phase 1's acceptance test
 └── main.rs         fetch / show / path
@@ -153,14 +154,26 @@ never touches the network.
 ### Keys
 
 ```
-1-7            jump straight to a tab
-tab/shift-tab  cycle
-j/k  ↑/↓       move the selection      g/G   top/bottom
-space/pgdn     page                    enter  open the row full-screen
-/              filter this tab         esc    back one layer
-n/p            next/previous row without leaving the detail view
-q  ctrl-c      quit
+navigation
+  1-7            jump straight to a tab      tab/shift-tab  cycle
+  j/k  ↑/↓       move the selection          g/G            top/bottom
+  space/pgdn     page                        enter          open full-screen
+  /              filter this tab             esc            back one layer
+  n/p            next/prev row without leaving the detail view
+
+play
+  d              damage      type a number, enter to apply
+  h              heal        "
+  t              temp hp     "
+  c              conditions overlay          i    inspiration
+  r              rest — short or long
+  s / f          death save success / failure  (only while dying)
+
+  q  ctrl-c      quit
 ```
+
+Play keys work from every tab. Mid-combat you should not have to navigate
+somewhere before you can take damage.
 
 `esc` backs out one layer at a time — detail, then the filter, then quit —
 rather than dumping you out of the app from three levels deep.
@@ -176,6 +189,40 @@ vellum show --tab spells
 vellum show --tab feats --scroll 15
 vellum show --tab actions --detail 6
 ```
+
+## Play state
+
+Everything that changes during a session lives in its own file,
+`<id>.session.json`, and the snapshot is never written to. Re-importing after a
+level-up replaces the snapshot and leaves your hit points alone.
+
+It stores **damage taken**, not current hit points. A level-up raises max HP in
+the snapshot; storing damage means you stay wounded by the same amount rather
+than being mysteriously healed by levelling.
+
+Written after every change rather than on quit — a uConsole running off two
+18650s can lose power mid-session, and re-entering an hour of combat tracking is
+worse than a few milliseconds of IO. A save that fails says so in the header.
+
+A first launch seeds from whatever the snapshot last recorded, so it agrees with
+the website instead of starting you at full health. A session belonging to a
+different character, or one that will not parse, is ignored and reseeded — the
+sheet is the thing you need at the table, and a bad file must never block it.
+
+`vellum reset` clears play state and leaves the snapshot and portrait alone.
+
+The 5e rules that are easy to get wrong, all pinned by tests:
+
+- damage comes off temporary hit points first, and temp pools replace rather
+  than stack
+- hit points never go below zero
+- **damage taken at zero is a failed death save** — the one people forget
+- dropping to zero clears prior death-save progress and applies Unconscious
+- any healing above zero clears death saves and wakes you
+- a long rest removes **one** level of exhaustion, not all of them
+
+Conditions and a zero-hit-point total are the only things allowed to break the
+amber palette. They render red, which is exactly why they read instantly.
 
 ## The portrait
 
@@ -196,7 +243,7 @@ aesthetic, not a defect.
 
 ## Testing
 
-67 tests, and the interaction model is the point of the architecture: `app/state.rs`
+100 tests, and the interaction model is the point of the architecture: `app/state.rs`
 and `app/keys.rs` depend on neither ratatui nor a terminal, so every key a player
 can press is exercised headlessly — selection memory across tabs, filter scoping,
 the escape ladder, clamping when a filter shrinks the list under the cursor.
@@ -258,11 +305,12 @@ truecolor ANSI instead.
 - [x] **Phase 1.5** — portrait, seven tabs, detail view, device harness
 - [x] **Phase 2** — ratatui TUI: tabs, list navigation, detail overlay, live
       filtering, amber theme, portrait
+- [x] **Phase 3** — play state: hit points, temp hp, conditions, exhaustion,
+      death saves, rests, persisted separately from the snapshot
+- [ ] **Phase 4** — d20 roller wired to the row you are on
 - [ ] **Phase 3** — session layer: HP, conditions, death saves, local overrides
-- [ ] **Phase 4** — d20 roller wired to the row you're on
-
-The snapshot is immutable and session state will live in a separate file, so
-re-importing after a level-up never clobbers HP you're tracking mid-combat.
+The snapshot is immutable and session state lives in a separate file, so
+re-importing after a level-up never clobbers HP you are tracking mid-combat.
 
 ## Building for the uConsole
 

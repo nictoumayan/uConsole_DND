@@ -1,7 +1,7 @@
 //! Key dispatch. Separated from the event loop so the whole keymap can be
 //! driven from tests without a terminal attached.
 
-use super::state::{App, Mode};
+use super::state::{App, Mode, NumberTarget};
 use crate::content::Tab;
 use ratatui::crossterm::event::{KeyCode, KeyModifiers};
 
@@ -13,6 +13,31 @@ pub fn handle(app: &mut App, code: KeyCode, mods: KeyModifiers) {
     }
 
     match app.mode {
+        // Numeric entry: digits accumulate, enter applies, esc abandons.
+        Mode::Number(_) => match code {
+            KeyCode::Esc => app.escape(),
+            KeyCode::Enter => app.commit_number(),
+            KeyCode::Backspace => app.pop_digit(),
+            KeyCode::Char(c) => app.push_digit(c),
+            _ => {}
+        },
+
+        Mode::Conditions => match code {
+            KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('c') => app.escape(),
+            KeyCode::Char('j') | KeyCode::Down => app.move_condition_cursor(1),
+            KeyCode::Char('k') | KeyCode::Up => app.move_condition_cursor(-1),
+            KeyCode::Char(' ') | KeyCode::Enter => app.toggle_condition_at_cursor(),
+            KeyCode::Char('+') | KeyCode::Char('=') | KeyCode::Right => app.adjust_at_cursor(1),
+            KeyCode::Char('-') | KeyCode::Left => app.adjust_at_cursor(-1),
+            _ => {}
+        },
+
+        Mode::Rest => match code {
+            KeyCode::Char('s') => app.rest(false),
+            KeyCode::Char('l') => app.rest(true),
+            _ => app.escape(),
+        },
+
         // In filter mode every printable key is text, not a command —
         // otherwise you could not search for "javelin" without jumping tabs.
         Mode::Filter => match code {
@@ -48,6 +73,21 @@ pub fn handle(app: &mut App, code: KeyCode, mods: KeyModifiers) {
         Mode::List => match code {
             KeyCode::Char('q') | KeyCode::Esc => app.escape(),
             KeyCode::Char('/') => app.start_filter(),
+
+            // Play state. These work from any tab — mid-combat you should not
+            // have to navigate somewhere before you can take damage.
+            KeyCode::Char('d') => app.start_number(NumberTarget::Damage),
+            KeyCode::Char('h') => app.start_number(NumberTarget::Heal),
+            KeyCode::Char('t') => app.start_number(NumberTarget::TempHp),
+            KeyCode::Char('c') => app.open_conditions(),
+            KeyCode::Char('r') => app.mode = Mode::Rest,
+            KeyCode::Char('i') => app.toggle_inspiration(),
+            // Death saves are bound only while you are actually dying, so
+            // they can use the obvious letters without stealing them the rest
+            // of the time. The footer says so when it matters.
+            KeyCode::Char('s') if app.is_dying() => app.death_save(true),
+            KeyCode::Char('f') if app.is_dying() => app.death_save(false),
+
             KeyCode::Enter | KeyCode::Right => app.open_detail(),
             KeyCode::Char('j') | KeyCode::Down => app.move_selection(1),
             KeyCode::Char('k') | KeyCode::Up => app.move_selection(-1),

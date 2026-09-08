@@ -12,6 +12,7 @@ use vellum::ddb::{fetch, Character};
 use vellum::content::Tab;
 use vellum::portrait::{fetch_avatar, Portrait};
 use vellum::app::{self, App};
+use vellum::session::Session;
 use vellum::{content, derive, device, paths, render, tabs};
 
 fn main() {
@@ -30,6 +31,7 @@ fn run() -> Result<()> {
         }
         Some("show") => cmd_show(&args[1..]),
         Some("tui") => cmd_tui(args.get(1).map(String::as_str)),
+        Some("reset") => cmd_reset(args.get(1).map(String::as_str)),
         Some("path") => {
             println!("{}", paths::ensure_dir()?.display());
             Ok(())
@@ -54,6 +56,7 @@ usage:
   vellum fetch <id|url>       pull a character from D&D Beyond and cache it
   vellum show [id] [flags]    render one static screen (no network, scriptable)
   vellum path                 print the data directory
+  vellum reset [id]           clear play state (hit points, conditions)
 
 keys:
   1-7 jump to tab   tab/shift-tab cycle   j/k move   enter detail
@@ -217,7 +220,35 @@ fn cmd_tui(id_arg: Option<&str>) -> Result<()> {
     let ch = load(id)?;
     let sheet = derive::derive(&ch);
     let portrait = load_portrait(id, 20, 8);
-    app::run(App::new(sheet, ch), portrait)
+
+    paths::ensure_dir()?;
+    let session_path = paths::session_path(id)?;
+    // Seeded from whatever the snapshot last recorded, so a first launch
+    // agrees with the website rather than starting you at full health.
+    let session = Session::load_or_seed(
+        &session_path,
+        id,
+        ch.removed_hit_points,
+        ch.temporary_hit_points,
+        ch.inspiration,
+    );
+
+    app::run(App::new(sheet, ch, session, session_path), portrait)
+}
+
+/// Deletes only the session. The snapshot and the portrait are untouched —
+/// this is "start the campaign fresh", not "forget my character".
+fn cmd_reset(id_arg: Option<&str>) -> Result<()> {
+    let id = resolve_id(id_arg)?;
+    let p = paths::session_path(id)?;
+    match std::fs::remove_file(&p) {
+        Ok(()) => eprintln!("cleared play state for {id}"),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            eprintln!("no play state for {id} — nothing to clear")
+        }
+        Err(e) => return Err(e).with_context(|| format!("removing {}", p.display())),
+    }
+    Ok(())
 }
 
 fn cmd_show(args: &[String]) -> Result<()> {

@@ -12,4 +12,5 @@ pub mod derive;
 pub mod paths;
 pub mod portrait;
 pub mod render;
+pub mod session;
 pub mod tabs;

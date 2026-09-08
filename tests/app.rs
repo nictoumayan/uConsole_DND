@@ -9,12 +9,20 @@ use vellum::app::{keys, App, Mode};
 use vellum::content::Tab;
 use vellum::ddb::Character;
 use vellum::derive::derive;
+use vellum::session::Session;
 
 fn app() -> App {
     let ch: Character =
         serde_json::from_str(include_str!("fixtures/srd_rogue.json")).expect("fixture parses");
     let sheet = derive(&ch);
-    App::new(sheet, ch)
+    // A temp path per test: these must never touch the real session file.
+    let path = std::env::temp_dir().join(format!(
+        "vellum-test-{}-{:?}.json",
+        std::process::id(),
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+    ));
+    let session = Session::seed(ch.id, ch.removed_hit_points, ch.temporary_hit_points, false);
+    App::new(sheet, ch, session, path)
 }
 
 fn press(a: &mut App, c: KeyCode) {
@@ -261,4 +269,166 @@ fn opening_detail_on_an_empty_filtered_list_is_a_no_op() {
     press(&mut a, KeyCode::Enter);
     press(&mut a, KeyCode::Enter);
     assert_eq!(a.mode, Mode::List, "opened a detail view with nothing selected");
+}
+
+// -- phase 3: play state ---------------------------------------------------
+
+#[test]
+fn damage_and_heal_are_typed_as_numbers_then_applied() {
+    let mut a = app();
+    // Not max_hp: the session seeds from the snapshot's removedHitPoints, so
+    // a fresh app is already wounded by whatever the website last recorded.
+    let start = a.current_hp();
+    press(&mut a, KeyCode::Char('d'));
+    assert!(matches!(a.mode, vellum::app::state::Mode::Number(_)));
+    typed(&mut a, "12");
+    press(&mut a, KeyCode::Enter);
+    assert_eq!(a.current_hp(), start - 12);
+    assert_eq!(a.mode, Mode::List, "should return to the list");
+
+    press(&mut a, KeyCode::Char('h'));
+    typed(&mut a, "5");
+    press(&mut a, KeyCode::Enter);
+    assert_eq!(a.current_hp(), start - 7);
+}
+
+#[test]
+fn play_keys_work_from_every_tab() {
+    // Mid-combat you should not have to navigate somewhere before you can
+    // take damage.
+    let mut a = app();
+    let start = a.current_hp();
+    for tab in Tab::ALL {
+        press(&mut a, KeyCode::Char(tab.key()));
+        press(&mut a, KeyCode::Char('d'));
+        typed(&mut a, "1");
+        press(&mut a, KeyCode::Enter);
+    }
+    assert_eq!(a.current_hp(), start - Tab::ALL.len() as i32);
+}
+
+#[test]
+fn escaping_a_number_entry_applies_nothing() {
+    let mut a = app();
+    let before = a.current_hp();
+    press(&mut a, KeyCode::Char('d'));
+    typed(&mut a, "99");
+    press(&mut a, KeyCode::Esc);
+    assert_eq!(a.current_hp(), before);
+    assert_eq!(a.mode, Mode::List);
+    assert!(a.number_buffer.is_empty(), "buffer should not survive a cancel");
+}
+
+#[test]
+fn non_digits_are_ignored_while_typing_a_number() {
+    let mut a = app();
+    press(&mut a, KeyCode::Char('d'));
+    typed(&mut a, "1q2");
+    assert_eq!(a.number_buffer, "12");
+    assert!(!a.quit, "q quit during numeric entry");
+}
+
+#[test]
+fn backspace_edits_a_number_and_an_empty_entry_is_a_no_op() {
+    let mut a = app();
+    let before = a.current_hp();
+    press(&mut a, KeyCode::Char('d'));
+    typed(&mut a, "15");
+    press(&mut a, KeyCode::Backspace);
+    assert_eq!(a.number_buffer, "1");
+    press(&mut a, KeyCode::Backspace);
+    press(&mut a, KeyCode::Enter);
+    assert_eq!(a.current_hp(), before, "an empty entry must not damage you");
+}
+
+#[test]
+fn conditions_overlay_toggles_and_wraps() {
+    let mut a = app();
+    press(&mut a, KeyCode::Char('c'));
+    assert_eq!(a.mode, Mode::Conditions);
+    press(&mut a, KeyCode::Char(' '));
+    assert!(a.session.has_condition("Blinded"));
+    press(&mut a, KeyCode::Char(' '));
+    assert!(!a.session.has_condition("Blinded"));
+
+    // Up from the first row wraps to the exhaustion counter at the bottom.
+    press(&mut a, KeyCode::Char('k'));
+    assert!(a.on_exhaustion_row());
+    press(&mut a, KeyCode::Char('+'));
+    assert_eq!(a.session.exhaustion, 1);
+    press(&mut a, KeyCode::Char('-'));
+    assert_eq!(a.session.exhaustion, 0);
+
+    press(&mut a, KeyCode::Esc);
+    assert_eq!(a.mode, Mode::List);
+}
+
+#[test]
+fn death_save_keys_are_bound_only_while_dying() {
+    let mut a = app();
+    // Healthy: `s` and `f` must do nothing at all.
+    press(&mut a, KeyCode::Char('s'));
+    press(&mut a, KeyCode::Char('f'));
+    assert_eq!(a.session.death_successes, 0);
+    assert_eq!(a.session.death_failures, 0);
+
+    press(&mut a, KeyCode::Char('d'));
+    typed(&mut a, "999");
+    press(&mut a, KeyCode::Enter);
+    assert!(a.is_dying());
+
+    press(&mut a, KeyCode::Char('s'));
+    assert_eq!(a.session.death_successes, 1);
+    press(&mut a, KeyCode::Char('f'));
+    assert_eq!(a.session.death_failures, 1);
+}
+
+#[test]
+fn a_long_rest_from_the_rest_menu_restores_everything() {
+    let mut a = app();
+    let max = a.max_hp();
+    press(&mut a, KeyCode::Char('d'));
+    typed(&mut a, "20");
+    press(&mut a, KeyCode::Enter);
+
+    press(&mut a, KeyCode::Char('r'));
+    assert_eq!(a.mode, Mode::Rest);
+    press(&mut a, KeyCode::Char('l'));
+    assert_eq!(a.current_hp(), max);
+    assert_eq!(a.mode, Mode::List);
+}
+
+#[test]
+fn the_rest_menu_can_be_dismissed_without_resting() {
+    let mut a = app();
+    press(&mut a, KeyCode::Char('d'));
+    typed(&mut a, "20");
+    press(&mut a, KeyCode::Enter);
+    let hurt = a.current_hp();
+
+    press(&mut a, KeyCode::Char('r'));
+    press(&mut a, KeyCode::Esc);
+    assert_eq!(a.current_hp(), hurt, "escaping the menu healed you");
+    assert_eq!(a.mode, Mode::List);
+}
+
+#[test]
+fn inspiration_toggles() {
+    let mut a = app();
+    let before = a.session.inspiration;
+    press(&mut a, KeyCode::Char('i'));
+    assert_ne!(a.session.inspiration, before);
+}
+
+#[test]
+fn play_keys_are_text_while_filtering() {
+    // "hard leather" contains d, h, r, c, i, t — none may fire as commands.
+    let mut a = app();
+    let start = a.current_hp();
+    press(&mut a, KeyCode::Char('6'));
+    press(&mut a, KeyCode::Char('/'));
+    typed(&mut a, "hard leather");
+    assert_eq!(a.filter, "hard leather");
+    assert_eq!(a.current_hp(), start, "a filter keystroke damaged the character");
+    assert_eq!(a.mode, Mode::Filter);
 }

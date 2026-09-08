@@ -17,12 +17,17 @@ fn main() -> anyhow::Result<()> {
         .and_then(|b| Portrait::decode(&b, 20, 8).ok());
 
     let sheet = vellum::derive::derive(&ch);
-    let mut app = App::new(sheet, ch);
+    let session = vellum::session::Session::seed(
+        ch.id, ch.removed_hit_points, ch.temporary_hit_points, ch.inspiration);
+    let path = std::env::temp_dir().join("vellum-dump-session.json");
+    let mut app = App::new(sheet, ch, session, path);
     for k in a.iter().skip(2) {
         let code = match k.as_str() {
             "ENTER" => KeyCode::Enter,
             "ESC" => KeyCode::Esc,
             "TAB" => KeyCode::Tab,
+            "SPACE" => KeyCode::Char(' '),
+            "BS" => KeyCode::Backspace,
             s => KeyCode::Char(s.chars().next().unwrap()),
         };
         keys::handle(&mut app, code, KeyModifiers::NONE);

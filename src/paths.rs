@@ -21,6 +21,13 @@ pub fn avatar_path(character_id: i64) -> Result<PathBuf> {
     Ok(project_dir()?.join(format!("{character_id}.avatar")))
 }
 
+/// Mutable play state: hit points, conditions, death saves. Deliberately a
+/// separate file from the snapshot so re-importing after a level-up cannot
+/// clobber what you are tracking mid-combat.
+pub fn session_path(character_id: i64) -> Result<PathBuf> {
+    Ok(project_dir()?.join(format!("{character_id}.session.json")))
+}
+
 /// The id of the character `vellum show` uses when none is given.
 pub fn default_id_path() -> Result<PathBuf> {
     Ok(project_dir()?.join("default_character"))

@@ -24,6 +24,13 @@ pub fn bright() -> Style {
 
 /// Selection is an inverted bar rather than a coloured one — on a 5" panel in
 /// a dim room, a filled block is legible at a glance and a hue shift is not.
+/// Red rather than amber. Conditions, zero hit points and a failed save are
+/// the only things allowed to break the phosphor palette — that is exactly why
+/// they read instantly.
+pub fn danger() -> Style {
+    Style::default().fg(Color::Rgb(255, 90, 60)).bg(BG).add_modifier(Modifier::BOLD)
+}
+
 pub fn selection() -> Style {
     Style::default().fg(BG).bg(AMBER).add_modifier(Modifier::BOLD)
 }

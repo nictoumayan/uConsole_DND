@@ -5,6 +5,7 @@ use super::state::{App, Mode};
 use super::theme;
 use crate::content::Tab;
 use crate::portrait::Portrait;
+use crate::session::CONDITIONS;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
@@ -17,8 +18,16 @@ pub fn draw(f: &mut Frame, app: &mut App, portrait: Option<&Portrait>) {
 
     // 2 status, 1 tab strip, content, 1 footer. The rules between them are
     // borders on the content block, so they cost nothing extra.
+    // The status bar grows a third row only when there is something on it —
+    // conditions or death saves. Twenty-two rows is too few to reserve space
+    // for a line that is usually blank.
+    let status_h = if app.session.condition_summary().is_empty() && !app.is_dying() {
+        2
+    } else {
+        3
+    };
     let [status, tabs, body, footer] = Layout::vertical([
-        Constraint::Length(2),
+        Constraint::Length(status_h),
         Constraint::Length(1),
         Constraint::Min(1),
         Constraint::Length(1),
@@ -30,6 +39,8 @@ pub fn draw(f: &mut Frame, app: &mut App, portrait: Option<&Portrait>) {
     app.page_rows = body.height.saturating_sub(2).max(1) as usize;
 
     match app.mode {
+        Mode::Conditions => draw_conditions(f, app, body),
+        Mode::Rest => draw_rest(f, body),
         Mode::Detail => draw_detail(f, app, body),
         _ => match app.tab {
             Tab::Vitals => draw_vitals(f, app, body, portrait),
@@ -42,21 +53,18 @@ pub fn draw(f: &mut Frame, app: &mut App, portrait: Option<&Portrait>) {
 
 fn draw_status(f: &mut Frame, app: &App, area: Rect) {
     let s = &app.sheet;
-    let hp_ratio = if s.hp.max.value > 0 {
-        s.hp.current as f64 / s.hp.max.value as f64
-    } else {
-        0.0
-    };
+    let max = app.max_hp();
+    let cur = app.current_hp();
+    let hp_ratio = if max > 0 { cur as f64 / max as f64 } else { 0.0 };
     let width = 10usize;
     let filled = (hp_ratio.max(0.0) * width as f64).round() as usize;
     let bar = format!("{}{}", "█".repeat(filled.min(width)), "░".repeat(width - filled.min(width)));
 
+    // At zero the HP figure is the most important thing on the screen.
+    let hp_style = if cur == 0 { theme::danger() } else { theme::bright() };
     let mut second = vec![
         Span::styled("HP ", theme::dim()),
-        Span::styled(
-            format!("{}/{}", s.hp.current, s.hp.max.value),
-            theme::bright(),
-        ),
+        Span::styled(format!("{cur}/{max}"), hp_style),
         Span::styled(format!(" {bar}  "), theme::base()),
         Span::styled("AC ", theme::dim()),
         Span::styled(s.armor_class.value.to_string(), theme::bright()),
@@ -67,21 +75,61 @@ fn draw_status(f: &mut Frame, app: &App, area: Rect) {
         Span::styled("  PP ", theme::dim()),
         Span::styled(s.passive_perception.to_string(), theme::base()),
     ];
-    if s.hp.temporary > 0 {
+    if app.session.temporary_hp > 0 {
         second.push(Span::styled(
-            format!("  +{} temp", s.hp.temporary),
+            format!("  +{} temp", app.session.temporary_hp),
             theme::bright(),
         ));
     }
+    if app.session.inspiration {
+        second.push(Span::styled("  ★", theme::bright()));
+    }
 
-    let lines = vec![
-        Line::from(vec![
-            Span::styled(s.name.to_uppercase(), theme::bright()),
-            Span::styled(format!("  {} {}", s.race, s.classes), theme::dim()),
-        ]),
-        Line::from(second),
+    let mut first = vec![
+        Span::styled(s.name.to_uppercase(), theme::bright()),
+        Span::styled(format!("  {} {}", s.race, s.classes), theme::dim()),
     ];
+    if app.last_error.is_some() {
+        first.push(Span::styled("  [session not saved]", theme::danger()));
+    }
+
+    let mut lines = vec![Line::from(first), Line::from(second)];
+
+    // Third row: conditions, and death saves when they are live.
+    if area.height >= 3 {
+        let mut third: Vec<Span> = Vec::new();
+        if app.session.is_dead() {
+            third.push(Span::styled("DEAD", theme::danger()));
+        } else if app.is_dying() {
+            third.push(Span::styled("DYING  ", theme::danger()));
+            third.push(Span::styled(
+                format!(
+                    "saves {} / fails {}",
+                    pips(app.session.death_successes),
+                    pips(app.session.death_failures)
+                ),
+                theme::bright(),
+            ));
+            if app.session.is_stable() {
+                third.push(Span::styled("  STABLE", theme::bright()));
+            }
+        }
+        let conditions = app.session.condition_summary();
+        if !conditions.is_empty() {
+            if !third.is_empty() {
+                third.push(Span::styled("   ", theme::base()));
+            }
+            third.push(Span::styled(conditions, theme::danger()));
+        }
+        lines.push(Line::from(third));
+    }
+
     f.render_widget(Paragraph::new(lines).style(theme::base()), area);
+}
+
+/// Death saves read faster as filled circles than as a number.
+fn pips(n: u8) -> String {
+    format!("{}{}", "●".repeat(n as usize), "○".repeat(3usize.saturating_sub(n as usize)))
 }
 
 fn draw_tabs(f: &mut Frame, app: &App, area: Rect) {
@@ -288,14 +336,22 @@ fn draw_skills(f: &mut Frame, app: &App, area: Rect) {
 fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
     let left = match app.mode {
         Mode::Filter => format!("/{}_", app.filter),
+        Mode::Number(t) => format!("{}: {}_   ↵ apply   esc cancel", t.prompt(), app.number_buffer),
+        Mode::Conditions => "j/k move   space toggle   +/- exhaustion   esc close".to_string(),
+        Mode::Rest => "rest:  s short   l long   esc cancel".to_string(),
         Mode::Detail => "esc back   j/k scroll   n/p next·prev row".to_string(),
-        Mode::List if app.is_list_tab() => {
-            "1-7 tab   j/k move   ↵ detail   / find   q quit".to_string()
+        // While dying, the thing you need is the death-save keys, not the
+        // navigation you already know.
+        Mode::List if app.is_dying() => {
+            "s success   f fail   h heal   c conditions   esc".to_string()
         }
-        Mode::List => "1-7 tab   q quit".to_string(),
+        Mode::List if app.is_list_tab() => {
+            "d dmg  h heal  c cond  r rest  / find  ↵ detail  q quit".to_string()
+        }
+        Mode::List => "d dmg  h heal  t temp  c cond  r rest  i insp  q quit".to_string(),
     };
 
-    let right = if app.is_list_tab() && app.mode != Mode::Detail {
+    let right = if app.is_list_tab() && matches!(app.mode, Mode::List | Mode::Filter) {
         let n = app.rows().len();
         if app.filter.is_empty() {
             format!("{n} items")
@@ -311,13 +367,91 @@ fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
         Paragraph::new(Line::from(vec![
             Span::styled(
                 left,
-                if app.mode == Mode::Filter { theme::bright() } else { theme::dim() },
+                match app.mode {
+                    Mode::Filter | Mode::Number(_) => theme::bright(),
+                    Mode::List if app.is_dying() => theme::danger(),
+                    _ => theme::dim(),
+                },
             ),
             Span::raw(" ".repeat(gap)),
             Span::styled(right, theme::dim()),
         ]))
         .style(theme::base()),
         area,
+    );
+}
+
+fn draw_conditions(f: &mut Frame, app: &App, area: Rect) {
+    let block = content_block().title(Span::styled(" CONDITIONS ", theme::bright()));
+    let inner = block.inner(area);
+    f.render_widget(Clear, area);
+    f.render_widget(block, area);
+
+    let mut lines: Vec<Line> = Vec::new();
+    for (i, name) in CONDITIONS.iter().enumerate() {
+        let on = app.session.has_condition(name);
+        let selected = app.condition_cursor == i;
+        let style = if selected {
+            theme::selection()
+        } else if on {
+            theme::danger()
+        } else {
+            theme::base()
+        };
+        lines.push(Line::styled(
+            format!(" [{}] {}", if on { "x" } else { " " }, name),
+            style,
+        ));
+    }
+    let selected = app.on_exhaustion_row();
+    lines.push(Line::styled(
+        format!(
+            " Exhaustion  {}  {}",
+            app.session.exhaustion,
+            "▮".repeat(app.session.exhaustion as usize)
+        ),
+        if selected {
+            theme::selection()
+        } else if app.session.exhaustion > 0 {
+            theme::danger()
+        } else {
+            theme::base()
+        },
+    ));
+
+    // Two columns: fifteen rows will not fit fifteen rows of content plus a
+    // border on a 22-row panel.
+    let half = lines.len().div_ceil(2);
+    let [left, right] = Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .areas(inner);
+    f.render_widget(Paragraph::new(lines[..half].to_vec()), left);
+    f.render_widget(Paragraph::new(lines[half..].to_vec()), right);
+}
+
+fn draw_rest(f: &mut Frame, area: Rect) {
+    let block = content_block().title(Span::styled(" REST ", theme::bright()));
+    let inner = block.inner(area);
+    f.render_widget(Clear, area);
+    f.render_widget(block, area);
+    f.render_widget(
+        Paragraph::new(vec![
+            Line::from(""),
+            Line::styled("  s   short rest", theme::base()),
+            Line::styled(
+                "      spend hit dice yourself; nothing here changes",
+                theme::dim(),
+            ),
+            Line::from(""),
+            Line::styled("  l   long rest", theme::base()),
+            Line::styled(
+                "      full hit points, temp hp cleared, death saves cleared,",
+                theme::dim(),
+            ),
+            Line::styled("      one level of exhaustion removed", theme::dim()),
+            Line::from(""),
+            Line::styled("  esc cancel", theme::dim()),
+        ]),
+        inner,
     );
 }
 
