@@ -141,9 +141,65 @@ pub struct Actions {
     pub feat: Vec<Action>,
 }
 
+/// How often a limited use recharges.
+///
+/// D&D Beyond is not consistent here: actions and spells carry a numeric
+/// `resetType`, while inventory items carry a *string* ("Dawn"). Both shapes
+/// have to deserialise or the whole import fails on one wand.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum ResetType {
+    Code(i32),
+    Name(String),
+}
+
+impl ResetType {
+    /// Codes 1 and 2 are corroborated by this character's own data — the feat
+    /// that says "Once per Short/Long Rest" carries 1, and the lineage spells
+    /// that recharge overnight carry 2. Anything else is rendered as
+    /// "special" rather than guessed at; a wrong recharge label is worse than
+    /// no label.
+    pub fn label(&self) -> String {
+        match self {
+            ResetType::Code(1) => "short rest".into(),
+            ResetType::Code(2) => "long rest".into(),
+            ResetType::Name(n) if !n.trim().is_empty() => n.to_lowercase(),
+            _ => "special".into(),
+        }
+    }
+
+    /// Whether a short rest restores it. Everything a short rest restores, a
+    /// long rest restores too.
+    pub fn on_short_rest(&self) -> bool {
+        matches!(self, ResetType::Code(1))
+    }
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct LimitedUse {
+    #[serde(deserialize_with = "nullable")]
+    pub max_uses: i32,
+    /// What D&D Beyond last recorded. Used only to seed a fresh session.
+    #[serde(deserialize_with = "nullable")]
+    pub number_used: i32,
+    pub reset_type: Option<ResetType>,
+}
+
+impl LimitedUse {
+    /// Some entries carry only `maxNumberConsumed` and no cap — those are not
+    /// a limited resource, they are a spell that can be upcast.
+    pub fn is_real(&self) -> bool {
+        self.max_uses > 0
+    }
+}
+
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Action {
+    #[serde(deserialize_with = "nullable")]
+    pub id: i64,
+    pub limited_use: Option<LimitedUse>,
     #[serde(deserialize_with = "nullable")]
     pub name: String,
     #[serde(deserialize_with = "nullable")]
@@ -194,6 +250,9 @@ pub struct ClassSpells {
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct SpellEntry {
+    #[serde(deserialize_with = "nullable")]
+    pub id: i64,
+    pub limited_use: Option<LimitedUse>,
     pub definition: SpellDefinition,
     #[serde(deserialize_with = "nullable")]
     pub prepared: bool,
@@ -304,6 +363,9 @@ pub struct CustomItem {
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct InventoryItem {
+    #[serde(deserialize_with = "nullable")]
+    pub id: i64,
+    pub limited_use: Option<LimitedUse>,
     #[serde(deserialize_with = "nullable")]
     pub quantity: i32,
     #[serde(deserialize_with = "nullable")]

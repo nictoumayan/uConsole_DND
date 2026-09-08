@@ -167,7 +167,8 @@
         "name": "Leather",
         "armorClass": 11,
         "type": "Light Armor"
-      }
+      },
+      "id": 700
     },
     {
       "quantity": 1,
@@ -177,6 +178,13 @@
         "name": "Shield",
         "armorClass": 2,
         "type": "Shield"
+      },
+      "id": 701,
+      "limitedUse": {
+        "maxUses": 3,
+        "numberUsed": 0,
+        "resetType": "Dawn",
+        "resetTypeDescription": ""
       }
     }
   ],
@@ -340,7 +348,8 @@
         "snippet": "Dash, Disengage or Hide.",
         "activation": {
           "activationType": 3
-        }
+        },
+        "id": 500
       },
       {
         "name": "Uncanny Dodge",
@@ -348,6 +357,12 @@
         "snippet": "Halve one attack's damage.",
         "activation": {
           "activationType": 4
+        },
+        "id": 501,
+        "limitedUse": {
+          "maxUses": 2,
+          "numberUsed": 0,
+          "resetType": 1
         }
       }
     ],
@@ -367,7 +382,8 @@
           "ritual": false
         },
         "prepared": false,
-        "alwaysPrepared": null
+        "alwaysPrepared": null,
+        "id": 600
       },
       {
         "definition": {
@@ -380,7 +396,13 @@
           "ritual": false
         },
         "prepared": false,
-        "alwaysPrepared": null
+        "alwaysPrepared": null,
+        "id": 601,
+        "limitedUse": {
+          "maxUses": 1,
+          "numberUsed": 0,
+          "resetType": 2
+        }
       }
     ],
     "class": [],
@@ -396,7 +418,12 @@
           "ritual": false
         },
         "prepared": false,
-        "alwaysPrepared": null
+        "alwaysPrepared": null,
+        "id": 602,
+        "limitedUse": {
+          "minNumberConsumed": null,
+          "maxNumberConsumed": 1
+        }
       }
     ],
     "feat": []

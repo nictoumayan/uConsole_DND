@@ -168,6 +168,7 @@ play
   h              heal        "
   t              temp hp     "
   c              conditions overlay          i    inspiration
+  u / U          spend / restore one limited use
   r              rest — short or long
   s / f          death save success / failure  (only while dying)
 
@@ -197,6 +198,28 @@ vellum show --tab spells
 vellum show --tab feats --scroll 15
 vellum show --tab actions --detail 6
 ```
+
+## Limited uses
+
+Anything with charges — a once-per-rest feat, a lineage spell, a wand — shows
+pips in the list. `u` spends one, `U` hands one back, for the misclick and for
+a DM who rules that one did not count.
+
+D&D Beyond is not consistent about this: actions and spells carry a **numeric**
+`resetType`, inventory items carry a **string** (`"Dawn"`). Both shapes have to
+deserialise or one wand fails the entire import, so `ResetType` is an untagged
+enum. Codes 1 and 2 are corroborated by this character's own data — the feat
+whose text says "Once per Short/Long Rest" carries 1, the lineage spells that
+recharge overnight carry 2 — and anything else renders as "special" rather than
+being guessed at. A wrong recharge label is worse than no label.
+
+An entry with `maxNumberConsumed` but no `maxUses` is an upcastable spell, not
+a charge, and gets no tracker.
+
+A short rest restores only what recharges on one; a long rest restores
+everything. The recharge type is stored **alongside** the count in the session
+rather than looked up from the snapshot, so a rest works from the session alone
+and a re-import can never orphan the bookkeeping.
 
 ## Dice
 
@@ -282,7 +305,7 @@ aesthetic, not a defect.
 
 ## Testing
 
-126 tests, and the interaction model is the point of the architecture: `app/state.rs`
+140 tests, and the interaction model is the point of the architecture: `app/state.rs`
 and `app/keys.rs` depend on neither ratatui nor a terminal, so every key a player
 can press is exercised headlessly — selection memory across tabs, filter scoping,
 the escape ladder, clamping when a filter shrinks the list under the cursor.
@@ -348,6 +371,8 @@ truecolor ANSI instead.
       death saves, rests, persisted separately from the snapshot
 - [x] **Phase 4** — dice: the ROLL tab, advantage, free-form expressions, a
       roll log, and self-applying death saves
+- [x] **Limited uses** — charges on actions, spells and items, restored by the
+      right kind of rest
 - [ ] **Phase 3** — session layer: HP, conditions, death saves, local overrides
 The snapshot is immutable and session state lives in a separate file, so
 re-importing after a level-up never clobbers HP you are tracking mid-combat.

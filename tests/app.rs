@@ -630,3 +630,87 @@ fn dice_keys_are_text_while_filtering() {
     assert!(a.rolls.is_empty(), "a filter keystroke rolled dice");
     assert_eq!(a.mode, Mode::Filter);
 }
+
+// -- limited uses ----------------------------------------------------------
+
+#[test]
+fn u_spends_a_use_and_shift_u_hands_it_back() {
+    let mut a = seeded();
+    go(&mut a, Tab::Actions);
+    press(&mut a, KeyCode::Char('/'));
+    typed(&mut a, "uncanny");
+    press(&mut a, KeyCode::Enter);
+
+    let row = a.selected_row().unwrap();
+    assert_eq!(a.remaining_uses(&row), Some((2, 2)));
+
+    press(&mut a, KeyCode::Char('u'));
+    assert_eq!(a.remaining_uses(&a.selected_row().unwrap()), Some((1, 2)));
+    press(&mut a, KeyCode::Char('u'));
+    assert_eq!(a.remaining_uses(&a.selected_row().unwrap()), Some((0, 2)));
+
+    // Spending past empty is a no-op, not an underflow.
+    press(&mut a, KeyCode::Char('u'));
+    assert_eq!(a.remaining_uses(&a.selected_row().unwrap()), Some((0, 2)));
+
+    press(&mut a, KeyCode::Char('U'));
+    assert_eq!(a.remaining_uses(&a.selected_row().unwrap()), Some((1, 2)));
+}
+
+#[test]
+fn spending_a_use_on_a_row_that_has_none_does_nothing() {
+    let mut a = seeded();
+    go(&mut a, Tab::Feats);
+    press(&mut a, KeyCode::Char('u'));
+    press(&mut a, KeyCode::Char('U'));
+    assert!(a.session.uses.is_empty());
+}
+
+#[test]
+fn a_short_rest_restores_short_rest_uses_only() {
+    let mut a = seeded();
+    // Uncanny Dodge: short rest. Faerie Fire: long rest.
+    go(&mut a, Tab::Actions);
+    press(&mut a, KeyCode::Char('/'));
+    typed(&mut a, "uncanny");
+    press(&mut a, KeyCode::Enter);
+    press(&mut a, KeyCode::Char('u'));
+
+    go(&mut a, Tab::Spells);
+    press(&mut a, KeyCode::Char('/'));
+    typed(&mut a, "faerie");
+    press(&mut a, KeyCode::Enter);
+    press(&mut a, KeyCode::Char('u'));
+
+    assert_eq!(a.session.expended_count(), 2);
+
+    press(&mut a, KeyCode::Char('r'));
+    press(&mut a, KeyCode::Char('s')); // short rest
+    assert_eq!(a.session.uses_of("action:501"), 0, "short-rest use not restored");
+    assert_eq!(a.session.uses_of("spell:601"), 1, "long-rest use wrongly restored");
+
+    press(&mut a, KeyCode::Char('r'));
+    press(&mut a, KeyCode::Char('l')); // long rest
+    assert_eq!(a.session.expended_count(), 0);
+}
+
+#[test]
+fn uses_survive_switching_tabs_and_filtering() {
+    let mut a = seeded();
+    go(&mut a, Tab::Actions);
+    press(&mut a, KeyCode::Char('/'));
+    typed(&mut a, "uncanny");
+    press(&mut a, KeyCode::Enter);
+    press(&mut a, KeyCode::Char('u'));
+
+    go(&mut a, Tab::Notes);
+    go(&mut a, Tab::Actions);
+    press(&mut a, KeyCode::Char('/'));
+    typed(&mut a, "uncanny");
+    press(&mut a, KeyCode::Enter);
+    assert_eq!(
+        a.remaining_uses(&a.selected_row().unwrap()),
+        Some((1, 2)),
+        "the spend did not stick"
+    );
+}

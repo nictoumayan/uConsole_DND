@@ -9,6 +9,7 @@
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::Path;
 
 /// The fourteen conditions from SRD 5.2.1 (CC-BY-4.0). Exhaustion is tracked
@@ -47,6 +48,22 @@ pub struct Session {
     pub death_successes: u8,
     pub death_failures: u8,
     pub inspiration: bool,
+    /// Expended limited uses, keyed `"<kind>:<id>"`.
+    ///
+    /// The recharge type is stored alongside the count rather than looked up
+    /// from the snapshot, so a rest works from the session alone and a
+    /// re-import cannot orphan the bookkeeping. BTreeMap keeps the JSON
+    /// stable, which makes the file diffable.
+    #[serde(default)]
+    pub uses: BTreeMap<String, UseEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UseEntry {
+    pub used: u32,
+    pub max: u32,
+    /// "short rest", "long rest", "dawn", "special".
+    pub reset: String,
 }
 
 impl Session {
@@ -63,6 +80,7 @@ impl Session {
             death_successes: 0,
             death_failures: 0,
             inspiration,
+            uses: BTreeMap::new(),
         }
     }
 
@@ -192,10 +210,45 @@ impl Session {
         self.death_failures = 0;
     }
 
-    /// A short rest changes nothing on its own in 5e — hit dice are spent
-    /// deliberately, and this app does not track them yet. Kept as an explicit
-    /// action so the rest menu is not misleadingly long-rest-only.
-    pub fn short_rest(&mut self) {}
+    // -- limited uses ------------------------------------------------------
+
+    pub fn uses_of(&self, key: &str) -> u32 {
+        self.uses.get(key).map(|e| e.used).unwrap_or(0)
+    }
+
+    pub fn remaining(&self, key: &str, max: u32) -> u32 {
+        max.saturating_sub(self.uses_of(key))
+    }
+
+    /// Spend one. Saturates at the maximum rather than going negative on the
+    /// remaining count.
+    pub fn spend_use(&mut self, key: &str, max: u32, reset: &str) {
+        let e = self.uses.entry(key.to_string()).or_insert(UseEntry {
+            used: 0,
+            max,
+            reset: reset.to_string(),
+        });
+        e.max = max;
+        e.reset = reset.to_string();
+        e.used = (e.used + 1).min(max);
+    }
+
+    /// Hand one back — for the misclick, and for a DM who rules that one did
+    /// not count.
+    pub fn restore_use(&mut self, key: &str) {
+        if let Some(e) = self.uses.get_mut(key) {
+            e.used = e.used.saturating_sub(1);
+            if e.used == 0 {
+                self.uses.remove(key);
+            }
+        }
+    }
+
+    /// A short rest restores only what recharges on one. Hit dice are spent
+    /// deliberately and are not tracked yet, so this is the whole of it.
+    pub fn short_rest(&mut self) {
+        self.uses.retain(|_, e| e.reset != "short rest");
+    }
 
     /// Full hit points, no temporary pool, death saves cleared, one level of
     /// exhaustion removed, and the conditions a night's sleep ends.
@@ -205,6 +258,15 @@ impl Session {
         self.clear_death_saves();
         self.adjust_exhaustion(-1);
         self.remove_condition("Unconscious");
+        // Everything recharges. A long rest spans dawn in all but contrived
+        // cases, and anything it should not have restored can be re-spent.
+        self.uses.clear();
+    }
+
+    /// How many limited-use things are currently expended — for a header chip
+    /// that answers "have I used anything I have forgotten about?".
+    pub fn expended_count(&self) -> usize {
+        self.uses.values().filter(|e| e.used > 0).count()
     }
 
     /// A short status chip for the header: "Poisoned, Prone, Exhaustion 2".

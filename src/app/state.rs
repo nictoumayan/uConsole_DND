@@ -197,6 +197,33 @@ impl App {
         self.mode = Mode::RollLog;
     }
 
+    // -- limited uses ------------------------------------------------------
+
+    /// Spend one use of whatever the cursor is on. Silently does nothing on a
+    /// row that is not a limited resource — most rows are not.
+    pub fn spend_use(&mut self) {
+        let Some(row) = self.selected_row() else { return };
+        let Some(u) = row.uses else { return };
+        if self.session.remaining(&u.key, u.max) == 0 {
+            return;
+        }
+        self.session.spend_use(&u.key, u.max, &u.reset);
+        self.persist();
+    }
+
+    pub fn restore_use(&mut self) {
+        let Some(row) = self.selected_row() else { return };
+        let Some(u) = row.uses else { return };
+        self.session.restore_use(&u.key);
+        self.persist();
+    }
+
+    /// Uses remaining on a row, for the list renderer.
+    pub fn remaining_uses(&self, row: &Row) -> Option<(u32, u32)> {
+        let u = row.uses.as_ref()?;
+        Some((self.session.remaining(&u.key, u.max), u.max))
+    }
+
     // -- play state --------------------------------------------------------
 
     pub fn max_hp(&self) -> i32 {

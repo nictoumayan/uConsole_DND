@@ -96,6 +96,11 @@ pub fn handle(app: &mut App, code: KeyCode, mods: KeyModifiers) {
             KeyCode::Char('a') => app.roll_selected(Advantage::Advantage),
             KeyCode::Char('z') => app.roll_selected(Advantage::Disadvantage),
             KeyCode::Char('x') => app.start_dice(),
+
+            // Limited uses. Lowercase spends, uppercase hands one back — for
+            // the misclick, and for a DM who rules that one did not count.
+            KeyCode::Char('u') => app.spend_use(),
+            KeyCode::Char('U') => app.restore_use(),
             KeyCode::Char('l') => app.open_roll_log(),
 
             // Play state. These work from any tab — mid-combat you should not

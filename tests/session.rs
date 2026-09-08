@@ -219,3 +219,108 @@ fn the_condition_list_is_the_srd_set() {
     // Exhaustion has levels, so it is tracked separately rather than as a toggle.
     assert!(!CONDITIONS.contains(&"Exhaustion"));
 }
+
+// -- limited uses ----------------------------------------------------------
+
+#[test]
+fn spending_a_use_saturates_at_the_maximum() {
+    let mut s = fresh();
+    for _ in 0..10 {
+        s.spend_use("action:1", 2, "short rest");
+    }
+    assert_eq!(s.uses_of("action:1"), 2);
+    assert_eq!(s.remaining("action:1", 2), 0);
+}
+
+#[test]
+fn restoring_hands_one_back_and_forgets_the_entry_at_zero() {
+    // Keeping a zero-use entry around would bloat the file with every ability
+    // the character has ever used once.
+    let mut s = fresh();
+    s.spend_use("action:1", 3, "short rest");
+    s.spend_use("action:1", 3, "short rest");
+    assert_eq!(s.remaining("action:1", 3), 1);
+
+    s.restore_use("action:1");
+    assert_eq!(s.uses_of("action:1"), 1);
+    s.restore_use("action:1");
+    assert_eq!(s.uses_of("action:1"), 0);
+    assert!(!s.uses.contains_key("action:1"), "spent entry not cleaned up");
+
+    // Restoring below zero is a no-op, not an underflow.
+    s.restore_use("action:1");
+    assert_eq!(s.uses_of("action:1"), 0);
+}
+
+#[test]
+fn an_untracked_key_reads_as_fully_available() {
+    let s = fresh();
+    assert_eq!(s.uses_of("item:99"), 0);
+    assert_eq!(s.remaining("item:99", 3), 3);
+}
+
+#[test]
+fn a_short_rest_restores_only_what_recharges_on_one() {
+    let mut s = fresh();
+    s.spend_use("action:short", 1, "short rest");
+    s.spend_use("spell:long", 1, "long rest");
+    s.spend_use("item:dawn", 1, "dawn");
+
+    s.short_rest();
+
+    assert_eq!(s.uses_of("action:short"), 0, "short-rest use not restored");
+    assert_eq!(s.uses_of("spell:long"), 1, "long-rest use wrongly restored");
+    assert_eq!(s.uses_of("item:dawn"), 1, "dawn use wrongly restored");
+}
+
+#[test]
+fn a_long_rest_restores_everything() {
+    let mut s = fresh();
+    s.spend_use("action:short", 1, "short rest");
+    s.spend_use("spell:long", 1, "long rest");
+    s.spend_use("item:dawn", 2, "dawn");
+    s.spend_use("action:weird", 1, "special");
+
+    s.long_rest();
+
+    assert!(s.uses.is_empty(), "something survived a long rest: {:?}", s.uses);
+    assert_eq!(s.expended_count(), 0);
+}
+
+#[test]
+fn the_recharge_type_is_stored_with_the_count() {
+    // Stored alongside rather than looked up from the snapshot, so a rest
+    // works from the session alone and a re-import cannot orphan it.
+    let dir = std::env::temp_dir().join(format!("vellum-uses-{}", std::process::id()));
+    let path = dir.join("s.json");
+    let mut s = fresh();
+    s.spend_use("action:1", 2, "short rest");
+    s.spend_use("spell:2", 1, "long rest");
+    s.save(&path).expect("saves");
+
+    let mut back = Session::load_or_seed(&path, 1, 0, 0, false);
+    back.short_rest();
+    assert_eq!(back.uses_of("action:1"), 0);
+    assert_eq!(back.uses_of("spell:2"), 1, "recharge type did not survive the round trip");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_session_written_before_uses_existed_still_loads() {
+    // The field is #[serde(default)], so an older file must not fail to parse.
+    let dir = std::env::temp_dir().join(format!("vellum-old-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("s.json");
+    std::fs::write(
+        &path,
+        r#"{"version":1,"character_id":1,"damage":7,"temporary_hp":0,
+            "conditions":[],"exhaustion":0,"death_successes":0,
+            "death_failures":0,"inspiration":false}"#,
+    )
+    .unwrap();
+
+    let s = Session::load_or_seed(&path, 1, 0, 0, false);
+    assert_eq!(s.damage, 7, "an older session should still load");
+    assert!(s.uses.is_empty());
+    let _ = std::fs::remove_dir_all(&dir);
+}

@@ -120,3 +120,50 @@ fn an_empty_snippet_falls_back_to_the_description() {
     assert!(!skulker.snippet.trim().is_empty(), "blank row in the list");
     assert!(skulker.snippet.contains("adept at slipping"));
 }
+
+#[test]
+fn limited_uses_parse_from_both_shapes_dndbeyond_uses() {
+    // Actions and spells carry a numeric resetType; inventory items carry a
+    // string. Both have to work or one wand fails the whole import.
+    let ch: vellum::ddb::Character =
+        serde_json::from_str(include_str!("fixtures/srd_rogue.json")).unwrap();
+    let sheet = derive(&ch);
+
+    let actions = vellum::content::rows_for(Tab::Actions, &ch, &sheet);
+    let uncanny = actions.iter().find(|r| r.name == "Uncanny Dodge").expect("action");
+    let u = uncanny.uses.as_ref().expect("numeric resetType 1 not parsed");
+    assert_eq!(u.max, 2);
+    assert_eq!(u.reset, "short rest");
+    assert_eq!(u.key, "action:501", "key must be stable across re-imports");
+
+    let spells = vellum::content::rows_for(Tab::Spells, &ch, &sheet);
+    let ff = spells.iter().find(|r| r.name == "Faerie Fire").expect("spell");
+    assert_eq!(ff.uses.as_ref().expect("resetType 2").reset, "long rest");
+
+    let gear = vellum::content::rows_for(Tab::Gear, &ch, &sheet);
+    let shield = gear.iter().find(|r| r.name == "Shield").expect("item");
+    let s = shield.uses.as_ref().expect("string resetType not parsed");
+    assert_eq!(s.max, 3);
+    assert_eq!(s.reset, "dawn");
+}
+
+#[test]
+fn an_entry_without_a_cap_is_not_a_limited_resource() {
+    // `maxNumberConsumed` with no `maxUses` is an upcastable spell, not a
+    // charge. Treating it as one would show a pip that never depletes.
+    let ch: vellum::ddb::Character =
+        serde_json::from_str(include_str!("fixtures/srd_rogue.json")).unwrap();
+    let sheet = derive(&ch);
+    let rows = vellum::content::rows_for(Tab::Spells, &ch, &sheet);
+    let dancing = rows.iter().find(|r| r.name == "Dancing Lights").expect("cantrip");
+    assert!(dancing.uses.is_none(), "a spell with no cap got a use tracker");
+}
+
+#[test]
+fn rows_without_limited_uses_carry_none() {
+    let ch: vellum::ddb::Character =
+        serde_json::from_str(include_str!("fixtures/srd_rogue.json")).unwrap();
+    let sheet = derive(&ch);
+    let rows = vellum::content::rows_for(Tab::Feats, &ch, &sheet);
+    assert!(rows.iter().all(|r| r.uses.is_none()));
+}

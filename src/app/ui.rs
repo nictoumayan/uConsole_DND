@@ -191,14 +191,30 @@ fn draw_list(f: &mut Frame, app: &mut App, area: Rect) {
     let meta_w = 14usize;
     let snip_w = (inner.width as usize).saturating_sub(name_w + meta_w + 4);
 
+    // Rows with limited uses get a pip column. It only appears when the tab
+    // actually has any, so nothing pays for it that does not use it.
+    let use_w = if rows.iter().any(|r| r.uses.is_some()) { 8 } else { 0 };
+    let snip_w = snip_w.saturating_sub(use_w);
+
     let items: Vec<ListItem> = rows
         .iter()
         .map(|r| {
-            ListItem::new(Line::from(vec![
+            let mut spans = vec![
                 Span::styled(format!("{:<name_w$}", trunc(&r.name, name_w)), theme::base()),
                 Span::styled(format!("  {:<meta_w$}", trunc(&r.meta, meta_w)), theme::dim()),
-                Span::styled(format!("  {}", trunc(&r.snippet, snip_w)), theme::base()),
-            ]))
+            ];
+            if use_w > 0 {
+                let (text, style) = match app.remaining_uses(r) {
+                    Some((left, max)) => (
+                        use_pips(left, max),
+                        if left == 0 { theme::danger() } else { theme::bright() },
+                    ),
+                    None => (String::new(), theme::dim()),
+                };
+                spans.push(Span::styled(format!("  {text:<6}"), style));
+            }
+            spans.push(Span::styled(format!("  {}", trunc(&r.snippet, snip_w)), theme::base()));
+            ListItem::new(Line::from(spans))
         })
         .collect();
 
@@ -375,7 +391,7 @@ fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
             "↵ roll   a adv   z dis   / find   x dice   l log".to_string()
         }
         Mode::List if app.is_list_tab() => {
-            "d dmg  h heal  c cond  r rest  / find  ↵ detail  x dice".to_string()
+            "d dmg  h heal  c cond  r rest  u use  / find  ↵ detail".to_string()
         }
         Mode::List => "d dmg  h heal  t temp  c cond  r rest  i insp  q quit".to_string(),
     };
@@ -510,7 +526,7 @@ fn draw_rest(f: &mut Frame, area: Rect) {
             Line::from(""),
             Line::styled("  s   short rest", theme::base()),
             Line::styled(
-                "      spend hit dice yourself; nothing here changes",
+                "      restores short-rest uses; hit dice are yours to spend",
                 theme::dim(),
             ),
             Line::from(""),
@@ -519,12 +535,29 @@ fn draw_rest(f: &mut Frame, area: Rect) {
                 "      full hit points, temp hp cleared, death saves cleared,",
                 theme::dim(),
             ),
-            Line::styled("      one level of exhaustion removed", theme::dim()),
+            Line::styled(
+                "      one level of exhaustion removed, all uses restored",
+                theme::dim(),
+            ),
             Line::from(""),
             Line::styled("  esc cancel", theme::dim()),
         ]),
         inner,
     );
+}
+
+/// Pips while they fit; a fraction once they do not. Six charges of Second
+/// Wind read fine as circles; twenty do not.
+fn use_pips(left: u32, max: u32) -> String {
+    if max <= 5 {
+        format!(
+            "{}{}",
+            "●".repeat(left as usize),
+            "○".repeat(max.saturating_sub(left) as usize)
+        )
+    } else {
+        format!("{left}/{max}")
+    }
 }
 
 /// Enough to clamp scrolling; ratatui does the real wrapping when it draws.

@@ -5,7 +5,7 @@
 //! That uniformity is what makes one set of keybindings work everywhere —
 //! j/k moves, Enter opens, / filters, regardless of which tab you are on.
 
-use crate::ddb::schema::{Character, SpellEntry};
+use crate::ddb::schema::{Character, LimitedUse, SpellEntry};
 use crate::derive::Sheet;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,6 +77,29 @@ pub struct RollSpec {
     pub kind: RollKind,
 }
 
+/// A limited-use resource attached to a row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UseSpec {
+    /// Stable across re-imports: `"<kind>:<id>"`.
+    pub key: String,
+    pub max: u32,
+    pub reset: String,
+}
+
+impl UseSpec {
+    fn from(kind: &str, id: i64, lu: &Option<LimitedUse>) -> Option<UseSpec> {
+        let lu = lu.as_ref()?;
+        if !lu.is_real() {
+            return None;
+        }
+        Some(UseSpec {
+            key: format!("{kind}:{id}"),
+            max: lu.max_uses.max(0) as u32,
+            reset: lu.reset_type.as_ref().map(|r| r.label()).unwrap_or_else(|| "special".into()),
+        })
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RollKind {
     Check,
@@ -97,6 +120,8 @@ pub struct Row {
     pub detail: String,
     /// Present only on the ROLL tab.
     pub roll: Option<RollSpec>,
+    /// Present when the row is a limited resource.
+    pub uses: Option<UseSpec>,
 }
 
 impl Row {
@@ -108,7 +133,7 @@ impl Row {
         if short.trim().is_empty() {
             short = first_line(&detail);
         }
-        Row { name: name.into(), meta: meta.into(), snippet: short, detail, roll: None }
+        Row { name: name.into(), meta: meta.into(), snippet: short, detail, roll: None, uses: None }
     }
 
     fn rollable(
@@ -124,7 +149,13 @@ impl Row {
             snippet: snippet.into(),
             detail: String::new(),
             roll: Some(RollSpec { modifier, kind }),
+            uses: None,
         }
+    }
+
+    fn with_uses(mut self, uses: Option<UseSpec>) -> Row {
+        self.uses = uses;
+        self
     }
 }
 
@@ -201,7 +232,10 @@ fn actions(ch: &Character) -> Vec<Row> {
         let _ = src;
         for a in list {
             let snippet = if a.snippet.is_empty() { &a.description } else { &a.snippet };
-            out.push(Row::new(&a.name, a.activation.label(), snippet, &a.description));
+            out.push(
+                Row::new(&a.name, a.activation.label(), snippet, &a.description)
+                    .with_uses(UseSpec::from("action", a.id, &a.limited_use)),
+            );
         }
     }
     out
@@ -231,7 +265,11 @@ fn spells(ch: &Character) -> Vec<Row> {
                 meta.push_str(" R");
             }
             let snippet = if d.snippet.is_empty() { &d.description } else { &d.snippet };
-            (d.level, Row::new(&d.name, meta, snippet, &d.description))
+            (
+                d.level,
+                Row::new(&d.name, meta, snippet, &d.description)
+                    .with_uses(UseSpec::from("spell", e.id, &e.limited_use)),
+            )
         })
         .collect();
 
@@ -280,7 +318,8 @@ fn gear(ch: &Character) -> Vec<Row> {
             } else {
                 format!("{} · {}", d.filter_type, d.rarity)
             };
-            let mut row = Row::new(&d.name, meta.trim(), &sub, &d.description);
+            let mut row = Row::new(&d.name, meta.trim(), &sub, &d.description)
+                .with_uses(UseSpec::from("item", i.id, &i.limited_use));
             row.snippet = sub;
             row
         })
