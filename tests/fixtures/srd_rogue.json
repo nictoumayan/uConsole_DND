@@ -1,0 +1,443 @@
+{
+  "id": 1,
+  "name": "Test Rogue",
+  "baseHitPoints": 43,
+  "bonusHitPoints": null,
+  "overrideHitPoints": null,
+  "removedHitPoints": 6,
+  "temporaryHitPoints": 0,
+  "inspiration": false,
+  "stats": [
+    {
+      "id": 1,
+      "value": 8
+    },
+    {
+      "id": 2,
+      "value": 15
+    },
+    {
+      "id": 3,
+      "value": 11
+    },
+    {
+      "id": 4,
+      "value": 15
+    },
+    {
+      "id": 5,
+      "value": 15
+    },
+    {
+      "id": 6,
+      "value": 15
+    }
+  ],
+  "bonusStats": [
+    {
+      "id": 1,
+      "value": null
+    },
+    {
+      "id": 2,
+      "value": null
+    },
+    {
+      "id": 3,
+      "value": null
+    },
+    {
+      "id": 4,
+      "value": null
+    },
+    {
+      "id": 5,
+      "value": null
+    },
+    {
+      "id": 6,
+      "value": null
+    }
+  ],
+  "overrideStats": [
+    {
+      "id": 1,
+      "value": null
+    },
+    {
+      "id": 2,
+      "value": null
+    },
+    {
+      "id": 3,
+      "value": null
+    },
+    {
+      "id": 4,
+      "value": null
+    },
+    {
+      "id": 5,
+      "value": null
+    },
+    {
+      "id": 6,
+      "value": null
+    }
+  ],
+  "race": {
+    "fullName": "Elf",
+    "baseRaceName": "Elf",
+    "racialTraits": [
+      {
+        "definition": {
+          "name": "Darkvision",
+          "description": "<p>You can see in dim light as if it were bright light.</p>",
+          "snippet": "See in the dark.",
+          "hideInSheet": false
+        }
+      },
+      {
+        "definition": {
+          "name": "Fey Ancestry",
+          "description": "<p>You have Advantage on saves to avoid the Charmed condition.</p>",
+          "snippet": "Advantage vs Charmed.",
+          "hideInSheet": false
+        }
+      },
+      {
+        "definition": {
+          "name": "Ability Score Increase",
+          "description": "<p>Builder bookkeeping.</p>",
+          "snippet": "",
+          "hideInSheet": true
+        }
+      }
+    ]
+  },
+  "classes": [
+    {
+      "level": 8,
+      "definition": {
+        "name": "Rogue",
+        "classFeatures": [
+          {
+            "name": "Sneak Attack",
+            "description": "<p>Once per turn you can deal extra damage to a target you have Advantage against.</p>",
+            "requiredLevel": 1,
+            "displayOrder": 1
+          },
+          {
+            "name": "Expertise",
+            "description": "<p>You gain Expertise in two of your skill proficiencies.</p>",
+            "requiredLevel": 1,
+            "displayOrder": 2
+          },
+          {
+            "name": "Cunning Action",
+            "description": "<p>You can Dash, Disengage or Hide as a Bonus Action.</p>",
+            "requiredLevel": 2,
+            "displayOrder": 1
+          },
+          {
+            "name": "Uncanny Dodge",
+            "description": "<p>Halve the damage of one attack you can see.</p>",
+            "requiredLevel": 5,
+            "displayOrder": 1
+          },
+          {
+            "name": "Stroke of Luck",
+            "description": "<p>A level 20 capstone that a level 8 rogue must never be shown.</p>",
+            "requiredLevel": 20,
+            "displayOrder": 1
+          }
+        ]
+      },
+      "subclassDefinition": {
+        "name": "Assassin"
+      }
+    }
+  ],
+  "inventory": [
+    {
+      "quantity": 1,
+      "equipped": true,
+      "isAttuned": false,
+      "definition": {
+        "name": "Leather",
+        "armorClass": 11,
+        "type": "Light Armor"
+      }
+    },
+    {
+      "quantity": 1,
+      "equipped": false,
+      "isAttuned": false,
+      "definition": {
+        "name": "Shield",
+        "armorClass": 2,
+        "type": "Shield"
+      }
+    }
+  ],
+  "modifiers": {
+    "race": [
+      {
+        "type": "set-base",
+        "subType": "darkvision",
+        "value": 60,
+        "isGranted": true,
+        "restriction": ""
+      },
+      {
+        "type": "set-base",
+        "subType": "darkvision",
+        "value": 120,
+        "isGranted": true,
+        "restriction": ""
+      },
+      {
+        "type": "immunity",
+        "subType": "magical-sleep",
+        "value": null,
+        "isGranted": true,
+        "restriction": ""
+      },
+      {
+        "type": "proficiency",
+        "subType": "insight",
+        "value": null,
+        "isGranted": false,
+        "restriction": ""
+      }
+    ],
+    "class": [
+      {
+        "type": "proficiency",
+        "subType": "stealth",
+        "value": null,
+        "isGranted": false,
+        "restriction": ""
+      },
+      {
+        "type": "proficiency",
+        "subType": "acrobatics",
+        "value": null,
+        "isGranted": false,
+        "restriction": ""
+      },
+      {
+        "type": "proficiency",
+        "subType": "sleight-of-hand",
+        "value": null,
+        "isGranted": false,
+        "restriction": ""
+      },
+      {
+        "type": "proficiency",
+        "subType": "athletics",
+        "value": null,
+        "isGranted": false,
+        "restriction": ""
+      },
+      {
+        "type": "expertise",
+        "subType": "stealth",
+        "value": null,
+        "isGranted": false,
+        "restriction": ""
+      },
+      {
+        "type": "expertise",
+        "subType": "insight",
+        "value": null,
+        "isGranted": false,
+        "restriction": ""
+      },
+      {
+        "type": "proficiency",
+        "subType": "dexterity-saving-throws",
+        "value": null,
+        "isGranted": true,
+        "restriction": ""
+      },
+      {
+        "type": "proficiency",
+        "subType": "intelligence-saving-throws",
+        "value": null,
+        "isGranted": true,
+        "restriction": ""
+      },
+      {
+        "type": "advantage",
+        "subType": "initiative",
+        "value": null,
+        "isGranted": true,
+        "restriction": ""
+      }
+    ],
+    "background": [],
+    "item": [
+      {
+        "type": "set",
+        "subType": "innate-speed-flying",
+        "value": 40,
+        "isGranted": true,
+        "restriction": "In an area of dim light or darkness"
+      }
+    ],
+    "feat": [
+      {
+        "type": "bonus",
+        "subType": "dexterity-score",
+        "value": 1,
+        "isGranted": false,
+        "restriction": ""
+      },
+      {
+        "type": "bonus",
+        "subType": "dexterity-score",
+        "value": 1,
+        "isGranted": false,
+        "restriction": ""
+      },
+      {
+        "type": "bonus",
+        "subType": "constitution-score",
+        "value": 1,
+        "isGranted": false,
+        "restriction": ""
+      }
+    ],
+    "condition": []
+  },
+  "deathSaves": {
+    "failCount": null,
+    "successCount": null,
+    "isStabilized": false
+  },
+  "feats": [
+    {
+      "definition": {
+        "name": "Alert",
+        "description": "<p>You gain a bonus to Initiative rolls.</p>",
+        "snippet": "Bonus to Initiative."
+      }
+    },
+    {
+      "definition": {
+        "name": "Skulker",
+        "description": "<p>You are adept at slipping into shadows.</p>",
+        "snippet": ""
+      }
+    }
+  ],
+  "actions": {
+    "class": [
+      {
+        "name": "Cunning Action",
+        "description": "<p>Dash, Disengage or Hide as a Bonus Action.</p>",
+        "snippet": "Dash, Disengage or Hide.",
+        "activation": {
+          "activationType": 3
+        }
+      },
+      {
+        "name": "Uncanny Dodge",
+        "description": "<p>Halve the damage from one attack.</p>",
+        "snippet": "Halve one attack's damage.",
+        "activation": {
+          "activationType": 4
+        }
+      }
+    ],
+    "race": [],
+    "feat": []
+  },
+  "spells": {
+    "race": [
+      {
+        "definition": {
+          "name": "Dancing Lights",
+          "level": 0,
+          "school": "Illusion",
+          "description": "<p>You create up to four torch-size lights.</p>",
+          "snippet": "Four floating lights.",
+          "concentration": true,
+          "ritual": false
+        },
+        "prepared": false,
+        "alwaysPrepared": null
+      },
+      {
+        "definition": {
+          "name": "Faerie Fire",
+          "level": 1,
+          "school": "Evocation",
+          "description": "<p>Objects in a cube are outlined in light.</p>",
+          "snippet": "Outline creatures in light.",
+          "concentration": true,
+          "ritual": false
+        },
+        "prepared": false,
+        "alwaysPrepared": null
+      }
+    ],
+    "class": [],
+    "item": [
+      {
+        "definition": {
+          "name": "Faerie Fire",
+          "level": 1,
+          "school": "Evocation",
+          "description": "<p>Objects in a cube are outlined in light.</p>",
+          "snippet": "Outline creatures in light.",
+          "concentration": true,
+          "ritual": false
+        },
+        "prepared": false,
+        "alwaysPrepared": null
+      }
+    ],
+    "feat": []
+  },
+  "classSpells": [],
+  "customItems": [
+    {
+      "name": "Piano Wire",
+      "description": "A length of wire.",
+      "quantity": 1,
+      "notes": "Coiled in a belt pouch."
+    }
+  ],
+  "currencies": {
+    "cp": 0,
+    "sp": 0,
+    "gp": 25,
+    "ep": 0,
+    "pp": 0
+  },
+  "background": {
+    "definition": {
+      "name": "Scribe",
+      "description": "<p>You spent formative years in a scriptorium.</p>",
+      "shortDescription": "Trained in a scriptorium."
+    }
+  },
+  "notes": {
+    "allies": null,
+    "backstory": "A short backstory used to exercise the notes tab.",
+    "enemies": null,
+    "organizations": null,
+    "otherHoldings": null,
+    "otherNotes": null,
+    "personalPossessions": null
+  },
+  "traits": {
+    "personalityTraits": "Precise and deliberate.",
+    "ideals": "Order.",
+    "bonds": null,
+    "flaws": null,
+    "appearance": null
+  }
+}

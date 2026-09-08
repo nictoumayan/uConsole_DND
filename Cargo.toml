@@ -1,0 +1,27 @@
+[package]
+name = "vellum"
+version = "0.1.0"
+edition = "2021"
+description = "Offline D&D Beyond character sheet for the ClockworkPi uConsole"
+
+[dependencies]
+anyhow = "1"
+directories = "5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ureq = "2"
+
+# Decode only. Default features pull in a dozen codecs we will never see —
+# D&D Beyond serves avatars as JPEG or PNG and nothing else. Downsampling is
+# ours (src/portrait.rs), so this is used purely to turn bytes into pixels.
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+
+# crossterm comes in via ratatui's re-export (`ratatui::crossterm`) rather than
+# as a direct dependency, so the two can never drift to incompatible versions.
+ratatui = "0.29"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true

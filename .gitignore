@@ -1,0 +1,7 @@
+/target
+
+# Character snapshots carry non-SRD rules text (spell/item/feature prose) that
+# belongs to Wizards. Fine on your own device, not fine in a public repo.
+# Committed fixtures must be SRD-only — see tests/fixtures/README.md.
+/tests/fixtures/real/
+*.snapshot.json

@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# Run vellum in a terminal shaped like the uConsole's panel.
+#
+# The device gives 80 columns x 22 rows (1280x720 with an 8x16 bitmap font at
+# 2x). Developing in a big terminal and finding out at the table that half the
+# sheet is off-screen is the failure this guards against.
+#
+#   scripts/uconsole              interactive TUI in a real 80x22 terminal
+#   scripts/uconsole --static     one static frame inside a drawn bezel
+#   scripts/uconsole --3x         the 53x15 grid you get at 3x scaling
+#
+# The default resizes the terminal emulator to exactly 80x22 via the xterm
+# escape (iTerm2 and Terminal.app both honour it), runs the TUI, and restores
+# your previous size on exit. That is the closest local approximation there is.
+#
+# --static draws a bezel around a simulated panel instead, so you can inspect
+# a single frame in a normal-sized window without the interactive loop.
+
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+PROFILE="uconsole"
+RAW=0
+# NOTE: macOS ships bash 3.2, where "${ARGS[@]}" on an empty array trips
+# `set -u`. The ${ARGS[@]+...} guard is what makes this portable.
+ARGS=()
+
+for a in "$@"; do
+  case "$a" in
+    --3x)     PROFILE="3x"; RAW=0 ;;
+    --static) RAW=0 ;;
+    --raw)    RAW=1 ;;
+    *)     ARGS+=("$a") ;;
+  esac
+done
+
+if ! command -v cargo >/dev/null 2>&1; then
+  export PATH="/opt/homebrew/bin:$PATH"
+fi
+
+if [[ "$RAW" == "1" ]]; then
+  if [[ -t 1 ]]; then
+    OLD=$(stty size 2>/dev/null || echo "24 80")
+    OLD_ROWS=${OLD% *}; OLD_COLS=${OLD#* }
+    if [[ "$PROFILE" == "3x" ]]; then COLS=53; ROWS=15; else COLS=80; ROWS=22; fi
+    restore() { printf '\e[8;%d;%dt' "$OLD_ROWS" "$OLD_COLS"; printf '\e[0m'; }
+    trap restore EXIT INT TERM
+    printf '\e[8;%d;%dt' "$ROWS" "$COLS"
+    sleep 0.2   # let the emulator settle before we draw into the new size
+  fi
+  # The TUI paints its own amber background; this just avoids a white flash
+  # between the resize and the first frame.
+  printf '\e[48;2;20;14;6m\e[2J\e[H'
+  cargo run --quiet -- tui ${ARGS[@]+"${ARGS[@]}"}
+else
+  cargo run --quiet -- show --device="$PROFILE" --amber ${ARGS[@]+"${ARGS[@]}"}
+fi
