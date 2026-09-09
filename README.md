@@ -552,6 +552,13 @@ Building on-device works but a cold build is 15+ minutes on a CM4. Run it inside
 come free and hardware-accelerated, and at the uConsole's ~294 PPI a bitmap font
 at 2x is razor sharp.
 
+## What's next
+
+The development queue, ordered by what would bite at a table rather than by what
+is interesting to build, is in [docs/roadmap.md](docs/roadmap.md). The short
+version: run it on the actual hardware, stop polling for input, add undo, then
+spell slots and Concentration.
+
 ## Writing changes back to D&D Beyond
 
 Not built, and not straightforward. Google OAuth is not a path — Google is the
