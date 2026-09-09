@@ -7,7 +7,7 @@ works with the wifi off.
 
 ```
 vellum                # opens the load screen on a first run
-vellum fetch https://www.dndbeyond.com/characters/147474826
+vellum fetch https://www.dndbeyond.com/characters/123456789
 ```
 
 ```
@@ -245,7 +245,7 @@ So being Poisoned and pressing `a` correctly produces a **straight roll**, and
 the footer says `cancelled by Poisoned`. That is the case people get wrong at a
 table, and it is the reason this module exists.
 
-Standing advantages come from the sheet without being asked. Rihanne's class
+Standing advantages come from the sheet without being asked. A Rogue's class
 grants advantage on Initiative, so rolling it shows `adv: initiative` with no
 keypress.
 
@@ -277,7 +277,7 @@ omitted:
   Petrified and Unconscious each carry an explicit "Speed 0" clause. Stunned
   does not — it only incapacitates. This was wrong in the first cut.
 - **Passive Perception shifts by 5**, not 0, when you have Advantage or
-  Disadvantage on Perception checks. Being Poisoned takes Rihanne from 15 to 10.
+  Disadvantage on Perception checks. Being Poisoned drops a passive 15 to 10.
 
 What it deliberately does **not** decide: whether you can see the source of
 your fear, whether the attacker is within five feet, whether a check relies on

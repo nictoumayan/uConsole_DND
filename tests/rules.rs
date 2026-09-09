@@ -110,7 +110,7 @@ fn several_sources_on_the_same_side_still_mean_two_dice() {
 
 #[test]
 fn a_standing_advantage_from_the_sheet_is_applied_without_being_asked() {
-    // Rihanne's class grants advantage on Initiative; rolling it should use it.
+    // A Rogue's class grants advantage on Initiative; rolling it should use it.
     let granted = c(&["initiative", "stealth", "death saving throws"]);
     assert_eq!(
         resolve(TestKind::Initiative, &[], 0, &granted, Advantage::Normal).advantage,

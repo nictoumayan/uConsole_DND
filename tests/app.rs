@@ -961,9 +961,9 @@ fn the_load_screen_accepts_every_url_shape_and_rejects_junk() {
     press(&mut a, KeyCode::Char('L'));
     assert_eq!(a.mode, Mode::Load);
 
-    typed(&mut a, "https://www.dndbeyond.com/characters/147474826/powhJe");
+    typed(&mut a, "https://www.dndbeyond.com/characters/123456789/AbCdEf");
     press(&mut a, KeyCode::Enter);
-    assert_eq!(a.pending_load, Some(147474826), "should hand the id to the loop");
+    assert_eq!(a.pending_load, Some(123456789), "should hand the id to the loop");
     a.pending_load = None;
 
     press(&mut a, KeyCode::Esc);
@@ -980,8 +980,8 @@ fn typing_a_url_does_not_fire_commands() {
     let mut a = seeded();
     let hp = a.current_hp();
     press(&mut a, KeyCode::Char('L'));
-    typed(&mut a, "https://www.dndbeyond.com/characters/147474826");
-    assert_eq!(a.load_buffer, "https://www.dndbeyond.com/characters/147474826");
+    typed(&mut a, "https://www.dndbeyond.com/characters/123456789");
+    assert_eq!(a.load_buffer, "https://www.dndbeyond.com/characters/123456789");
     assert_eq!(a.current_hp(), hp, "a keystroke damaged the character");
     assert_eq!(a.tab, Tab::Vitals, "a digit changed tabs");
     assert!(!a.quit);

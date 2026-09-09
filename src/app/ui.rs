@@ -748,10 +748,10 @@ fn draw_load(f: &mut Frame, app: &App, area: Rect) {
         }
         LoadStatus::Idle => {
             lines.push(Line::styled(
-                "  https://www.dndbeyond.com/characters/147474826",
+                "  https://www.dndbeyond.com/characters/123456789",
                 theme::dim(),
             ));
-            lines.push(Line::styled("  147474826", theme::dim()));
+            lines.push(Line::styled("  123456789", theme::dim()));
         }
     }
 

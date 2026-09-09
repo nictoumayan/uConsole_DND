@@ -527,8 +527,8 @@ impl Modifier {
     ///
     /// NOTE: this deliberately does **not** consult `is_granted`. That flag
     /// does not mean "active" — it appears to mean "granted automatically"
-    /// as opposed to "chosen by the player from a list". Rihanne's Expertise
-    /// in Stealth and four of her class skill proficiencies all arrive with
+    /// as opposed to "chosen by the player from a list". A rogue's Expertise
+    /// in Stealth and several class skill proficiencies all arrive with
     /// `isGranted: false` and are unquestionably active. Filtering on it drops
     /// half the skill bonuses on any character who ever made a choice, which
     /// is every character.

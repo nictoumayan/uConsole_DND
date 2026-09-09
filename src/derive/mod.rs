@@ -640,8 +640,8 @@ fn derive_senses(ch: &Character) -> Vec<(String, i32)> {
     SENSE_SUBTYPES
         .iter()
         .filter_map(|sense| {
-            // `set-base` takes the HIGHEST value, never the sum. Rihanne has
-            // two darkvision entries, 60 and 120; she sees 120ft, not 180ft.
+            // `set-base` takes the HIGHEST value, never the sum. A character
+            // with darkvision entries of 60 and 120 sees 120ft, not 180ft.
             active(ch, "set-base", sense)
                 .filter_map(|m| m.value)
                 .max()

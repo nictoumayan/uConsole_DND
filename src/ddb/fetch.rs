@@ -13,9 +13,9 @@ use std::time::Duration;
 const UA: &str = concat!("vellum/", env!("CARGO_PKG_VERSION"), " (personal character sheet)");
 
 /// Accepts a bare id, or any of the URL shapes D&D Beyond hands out:
-///   147474826
-///   https://www.dndbeyond.com/characters/147474826
-///   https://www.dndbeyond.com/characters/147474826/powhJe   <- share link
+///   123456789
+///   https://www.dndbeyond.com/characters/123456789
+///   https://www.dndbeyond.com/characters/123456789/AbCdEf   <- share link
 ///
 /// The trailing share token is decorative as far as the JSON route is
 /// concerned; the bare id returns the full payload for a public character.
@@ -73,15 +73,15 @@ mod tests {
     #[test]
     fn parses_every_url_shape() {
         let cases = [
-            "147474826",
-            "  147474826  ",
-            "https://www.dndbeyond.com/characters/147474826",
-            "https://www.dndbeyond.com/characters/147474826/",
-            "https://www.dndbeyond.com/characters/147474826/powhJe",
-            "https://www.dndbeyond.com/character/147474826/json",
+            "123456789",
+            "  123456789  ",
+            "https://www.dndbeyond.com/characters/123456789",
+            "https://www.dndbeyond.com/characters/123456789/",
+            "https://www.dndbeyond.com/characters/123456789/AbCdEf",
+            "https://www.dndbeyond.com/character/123456789/json",
         ];
         for c in cases {
-            assert_eq!(parse_character_id(c).unwrap(), 147474826, "failed on {c:?}");
+            assert_eq!(parse_character_id(c).unwrap(), 123456789, "failed on {c:?}");
         }
     }
 
