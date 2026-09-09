@@ -172,6 +172,7 @@ play
   i              inspiration
   o              correct ability scores by hand
   L              load a character by URL
+  ctrl-z         undo the last change
   u / U          spend / restore one limited use
   r              rest — short or long
                  short opens a screen: space spends one hit die at a time
@@ -396,6 +397,26 @@ The correction is deliberately made on the **score**, never on the derived
 value. One entry fixes everything downstream and stays correct as the character
 levels; six patches on six derived numbers would not.
 
+## Undo
+
+`Ctrl-Z` reverses the last thing that changed, up to thirty steps back. Typing
+`d 30` when you meant `d 3` you could always heal back; a mis-toggled condition,
+a wrongly spent limited use or a mis-keyed death save you could not — and all
+three happen mid-combat, which is exactly when you are least able to repair
+state by hand.
+
+The snapshot is taken around the whole keystroke rather than inside each
+mutating method, so a mutation added later is covered without anyone
+remembering to cover it. The label comes from comparing the two sessions, for
+the same reason: nothing has to describe itself. The footer offers what would
+be reversed (`^Z hit points`) and confirms what was.
+
+Two things it deliberately does not do. **It leaves the roll log alone** —
+undoing the heal from a spent hit die should not pretend the die was never
+rolled, because it really came up what it came up. And **it does not reach
+across characters**: loading a new one clears the stack, since restoring one
+character's hit points onto another is worse than not undoing at all.
+
 ## Play state
 
 Everything that changes during a session lives in its own file,
@@ -462,7 +483,7 @@ aesthetic, not a defect.
 
 ## Testing
 
-207 tests, and the interaction model is the point of the architecture: `app/state.rs`
+218 tests, and the interaction model is the point of the architecture: `app/state.rs`
 and `app/keys.rs` depend on neither ratatui nor a terminal, so every key a player
 can press is exercised headlessly — selection memory across tabs, filter scoping,
 the escape ladder, clamping when a filter shrinks the list under the cursor.

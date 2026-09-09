@@ -1024,3 +1024,156 @@ fn escape_will_not_strand_you_on_an_empty_first_run() {
     assert_eq!(a.mode, Mode::Load, "there is nothing to escape to yet");
     assert!(!a.quit);
 }
+
+// -- undo ------------------------------------------------------------------
+
+fn undo(a: &mut App) {
+    keys::handle(a, KeyCode::Char('z'), KeyModifiers::CONTROL);
+}
+
+#[test]
+fn undo_reverses_the_last_change_and_says_what_it_was() {
+    let mut a = seeded();
+    let hp = a.current_hp();
+    press(&mut a, KeyCode::Char('d'));
+    typed(&mut a, "30");
+    press(&mut a, KeyCode::Enter);
+    assert_eq!(a.next_undo(), Some("hit points"));
+
+    undo(&mut a);
+    assert_eq!(a.current_hp(), hp);
+    assert_eq!(a.undo_note, Some("hit points"));
+    assert!(!a.can_undo());
+}
+
+#[test]
+fn undo_goes_back_more_than_one_step() {
+    let mut a = seeded();
+    let hp = a.current_hp();
+    press(&mut a, KeyCode::Char('d'));
+    typed(&mut a, "10");
+    press(&mut a, KeyCode::Enter);
+    press(&mut a, KeyCode::Char('c'));
+    press(&mut a, KeyCode::Char(' ')); // Blinded
+    press(&mut a, KeyCode::Esc);
+    press(&mut a, KeyCode::Char('i')); // inspiration
+
+    assert_eq!(a.next_undo(), Some("inspiration"));
+    undo(&mut a);
+    assert_eq!(a.next_undo(), Some("conditions"));
+    undo(&mut a);
+    assert!(a.session.conditions.is_empty());
+    undo(&mut a);
+    assert_eq!(a.current_hp(), hp);
+    assert!(!a.can_undo());
+}
+
+#[test]
+fn only_changes_are_recorded() {
+    // Moving a cursor or switching tabs is not something to undo.
+    let mut a = seeded();
+    go(&mut a, Tab::Feats);
+    for _ in 0..5 {
+        press(&mut a, KeyCode::Char('j'));
+    }
+    press(&mut a, KeyCode::Char('/'));
+    typed(&mut a, "sneak");
+    press(&mut a, KeyCode::Enter);
+    go(&mut a, Tab::Gear);
+    assert!(!a.can_undo(), "navigation should not fill the undo stack");
+}
+
+#[test]
+fn undo_does_not_record_itself() {
+    let mut a = seeded();
+    press(&mut a, KeyCode::Char('i'));
+    assert!(a.can_undo());
+    undo(&mut a);
+    assert!(!a.can_undo(), "the undo became something to undo");
+}
+
+#[test]
+fn undoing_with_nothing_recorded_is_a_no_op() {
+    let mut a = seeded();
+    let hp = a.current_hp();
+    undo(&mut a);
+    undo(&mut a);
+    assert_eq!(a.current_hp(), hp);
+    assert!(a.undo_note.is_none());
+    assert!(!a.quit);
+}
+
+#[test]
+fn undoing_an_ability_correction_rebuilds_the_whole_sheet() {
+    // An ability score feeds armour class, saves, skills and attacks, so
+    // restoring the session is not enough on its own.
+    let mut a = seeded();
+    let ac = a.sheet.armor_class.value;
+    press(&mut a, KeyCode::Char('o'));
+    press(&mut a, KeyCode::Char('j')); // DEX
+    press(&mut a, KeyCode::Char('+'));
+    assert_eq!(a.sheet.armor_class.value, ac + 1);
+
+    undo(&mut a);
+    assert_eq!(a.sheet.armor_class.value, ac, "the sheet did not follow the undo");
+    assert_eq!(a.undo_note, Some("an ability score"));
+}
+
+#[test]
+fn undo_leaves_the_roll_log_alone() {
+    // Undoing the heal from a spent hit die must not pretend the die was
+    // never rolled. It really came up what it came up.
+    let mut a = seeded();
+    press(&mut a, KeyCode::Char('d'));
+    typed(&mut a, "20");
+    press(&mut a, KeyCode::Enter);
+    press(&mut a, KeyCode::Char('r'));
+    press(&mut a, KeyCode::Char('s'));
+    press(&mut a, KeyCode::Char(' ')); // spend a hit die
+    let rolls = a.rolls.len();
+    let dice_left = a.hit_dice()[0].1;
+
+    undo(&mut a);
+    assert_eq!(a.rolls.len(), rolls, "the roll log should survive an undo");
+    assert_eq!(a.hit_dice()[0].1, dice_left + 1, "the die should come back");
+}
+
+#[test]
+fn the_undo_stack_is_bounded() {
+    let mut a = seeded();
+    for _ in 0..(vellum::app::state::UNDO_DEPTH + 20) {
+        press(&mut a, KeyCode::Char('i')); // toggle inspiration
+    }
+    // Unwinding everything must terminate and leave the app usable.
+    for _ in 0..(vellum::app::state::UNDO_DEPTH + 40) {
+        undo(&mut a);
+    }
+    assert!(!a.can_undo());
+    assert!(!a.quit);
+}
+
+#[test]
+fn undo_does_not_reach_across_characters() {
+    // Restoring one character's hit points onto another is worse than not
+    // undoing at all.
+    let mut a = seeded();
+    press(&mut a, KeyCode::Char('d'));
+    typed(&mut a, "10");
+    press(&mut a, KeyCode::Enter);
+    assert!(a.can_undo());
+
+    let ch: Character = serde_json::from_str(include_str!("fixtures/srd_rogue.json")).unwrap();
+    let s = Session::seed(ch.id, 0, 0, false);
+    a.adopt(ch, s, std::env::temp_dir().join("adopted2.json"), None);
+    assert!(!a.can_undo(), "the undo stack survived a character swap");
+}
+
+#[test]
+fn a_new_keystroke_clears_the_undo_confirmation() {
+    let mut a = seeded();
+    press(&mut a, KeyCode::Char('i'));
+    undo(&mut a);
+    assert!(a.undo_note.is_some());
+    press(&mut a, KeyCode::Char('j'));
+    assert!(a.undo_note.is_none(), "the note should not linger");
+}

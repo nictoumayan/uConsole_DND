@@ -108,7 +108,16 @@ pub struct App {
     /// "fetching" frame — otherwise the UI freezes with no explanation while
     /// the network call blocks.
     pub pending_load: Option<i64>,
+
+    // -- undo ---------------------------------------------------------------
+    /// Sessions as they were before each change, newest last.
+    undo_stack: Vec<(Session, &'static str)>,
+    /// What the last undo reversed, shown until the next keystroke.
+    pub undo_note: Option<&'static str>,
 }
+
+/// How far back undo reaches. A session's worth of mistakes, not a campaign's.
+pub const UNDO_DEPTH: usize = 30;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LoadStatus {
@@ -155,7 +164,54 @@ impl App {
             load_buffer: String::new(),
             load_status: LoadStatus::Idle,
             pending_load: None,
+            undo_stack: Vec::new(),
+            undo_note: None,
         }
+    }
+
+    // -- undo ---------------------------------------------------------------
+
+    /// Record the session as it was before a keystroke, if the keystroke
+    /// changed it.
+    ///
+    /// Snapshotting around the whole dispatch rather than inside each mutating
+    /// method means a mutation added later is covered without anyone
+    /// remembering to cover it. The cost is one `Session` clone per keypress,
+    /// which is a few hundred bytes on a device waiting for a human.
+    pub fn record_undo(&mut self, before: Session) {
+        if let Some(what) = Session::describe_change(&before, &self.session) {
+            self.undo_stack.push((before, what));
+            if self.undo_stack.len() > UNDO_DEPTH {
+                self.undo_stack.remove(0);
+            }
+        }
+    }
+
+    pub fn can_undo(&self) -> bool {
+        !self.undo_stack.is_empty()
+    }
+
+    /// What the next undo would reverse, for the footer.
+    pub fn next_undo(&self) -> Option<&'static str> {
+        self.undo_stack.last().map(|(_, what)| *what)
+    }
+
+    /// Restore the previous session.
+    ///
+    /// The roll log is deliberately left alone: undoing the heal from a spent
+    /// hit die should not pretend the die was never rolled. The dice really
+    /// came up what they came up.
+    pub fn undo(&mut self) {
+        let Some((session, what)) = self.undo_stack.pop() else {
+            self.undo_note = None;
+            return;
+        };
+        self.session = session;
+        // Ability corrections feed the whole sheet, so it has to be rebuilt.
+        self.sheet = crate::derive::derive_with(&self.character, &self.session.ability_overrides);
+        self.undo_note = Some(what);
+        self.mode = Mode::List;
+        self.persist();
     }
 
     // -- loading a character -----------------------------------------------
@@ -212,6 +268,10 @@ impl App {
         self.load_buffer.clear();
         self.load_status = LoadStatus::Idle;
         self.mode = Mode::List;
+        // Undo must not reach across characters — restoring one character's
+        // hit points onto another is worse than not undoing at all.
+        self.undo_stack.clear();
+        self.undo_note = None;
     }
 
     pub fn load_failed(&mut self, message: String) {

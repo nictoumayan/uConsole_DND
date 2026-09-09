@@ -13,7 +13,6 @@ pub use state::{App, Mode};
 
 use anyhow::{Context, Result};
 use ratatui::crossterm::event::{self, Event, KeyEventKind};
-use std::time::Duration;
 
 use crate::portrait::Portrait;
 use crate::session::Session;
@@ -97,11 +96,11 @@ fn event_loop(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> Result<
             continue;
         }
 
-        // A blocking read would be simplest, but polling lets the loop wake to
-        // redraw on a resize without waiting for a keypress.
-        if !event::poll(Duration::from_millis(250)).context("polling for input")? {
-            continue;
-        }
+        // Block. An earlier version polled every 250ms on the theory that a
+        // blocking read would miss resizes; it does not — crossterm delivers
+        // Resize through read() like any other event. Four wakeups a second
+        // doing nothing is not free on a device running off two 18650s for
+        // longer than its battery comfortably lasts.
         match event::read().context("reading input")? {
             // Windows terminals emit both press and release; only act on press
             // or every key fires twice.

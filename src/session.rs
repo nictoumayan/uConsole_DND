@@ -33,7 +33,7 @@ pub const CONDITIONS: [&str; 14] = [
 
 pub const MAX_EXHAUSTION: u8 = 6;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Session {
     /// Bumped only on a breaking change to this file's shape.
     pub version: u32,
@@ -79,7 +79,7 @@ pub struct Session {
     pub uses: BTreeMap<String, UseEntry>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UseEntry {
     pub used: u32,
     pub max: u32,
@@ -350,6 +350,37 @@ impl Session {
     /// that answers "have I used anything I have forgotten about?".
     pub fn expended_count(&self) -> usize {
         self.uses.values().filter(|e| e.used > 0).count()
+    }
+
+    /// Name what differs between two sessions, for an undo label.
+    ///
+    /// Derived by comparison rather than recorded by each mutating method, so
+    /// a future mutation cannot forget to describe itself.
+    pub fn describe_change(before: &Session, after: &Session) -> Option<&'static str> {
+        if before == after {
+            return None;
+        }
+        Some(if before.damage != after.damage || before.temporary_hp != after.temporary_hp {
+            "hit points"
+        } else if before.death_successes != after.death_successes
+            || before.death_failures != after.death_failures
+        {
+            "a death save"
+        } else if before.conditions != after.conditions {
+            "conditions"
+        } else if before.exhaustion != after.exhaustion {
+            "exhaustion"
+        } else if before.uses != after.uses {
+            "a limited use"
+        } else if before.hit_dice_used != after.hit_dice_used {
+            "hit dice"
+        } else if before.ability_overrides != after.ability_overrides {
+            "an ability score"
+        } else if before.inspiration != after.inspiration {
+            "inspiration"
+        } else {
+            "the last change"
+        })
     }
 
     /// A short status chip for the header: "Poisoned, Prone, Exhaustion 2".

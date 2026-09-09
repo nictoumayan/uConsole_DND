@@ -493,15 +493,29 @@ fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
         Mode::List => "d dmg  h heal  t temp  c cond  r rest  o scores  q quit".to_string(),
     };
 
+    // Feedback first: having just pressed undo, what it reversed matters more
+    // than the keymap you already know.
+    let left = match app.undo_note {
+        Some(what) => format!("undid {what}"),
+        None => left,
+    };
+
     let right = if app.is_list_tab() && matches!(app.mode, Mode::List | Mode::Filter) {
         let n = app.rows().len();
-        if app.filter.is_empty() {
+        let items = if app.filter.is_empty() {
             format!("{n} items")
         } else {
             format!("{n} matching {:?}", app.filter)
+        };
+        match app.next_undo() {
+            Some(what) => format!("^Z {what} · {items}"),
+            None => items,
         }
     } else {
-        String::new()
+        match app.next_undo() {
+            Some(what) => format!("^Z {what}"),
+            None => String::new(),
+        }
     };
 
     let gap = (area.width as usize).saturating_sub(left.chars().count() + right.chars().count());
@@ -510,6 +524,7 @@ fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
             Span::styled(
                 left,
                 match app.mode {
+                    _ if app.undo_note.is_some() => theme::bright(),
                     Mode::Filter | Mode::Number(_) => theme::bright(),
                     Mode::List if app.is_dying() => theme::danger(),
                     _ => theme::dim(),

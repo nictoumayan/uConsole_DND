@@ -434,3 +434,39 @@ fn hit_dice_survive_a_round_trip() {
     assert_eq!(back.hit_dice_used("d8"), 2);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_change_describes_itself_by_what_actually_differs() {
+    // Derived by comparison rather than recorded by each mutating method, so
+    // a mutation added later cannot forget to describe itself.
+    let base = fresh();
+    assert_eq!(Session::describe_change(&base, &base), None, "no change, no label");
+
+    let mut hp = base.clone();
+    hp.take_damage(5, MAX);
+    assert_eq!(Session::describe_change(&base, &hp), Some("hit points"));
+
+    let mut cond = base.clone();
+    cond.add_condition("Poisoned");
+    assert_eq!(Session::describe_change(&base, &cond), Some("conditions"));
+
+    let mut ex = base.clone();
+    ex.adjust_exhaustion(1);
+    assert_eq!(Session::describe_change(&base, &ex), Some("exhaustion"));
+
+    let mut uses = base.clone();
+    uses.spend_use("action:1", 2, "short rest");
+    assert_eq!(Session::describe_change(&base, &uses), Some("a limited use"));
+
+    let mut hd = base.clone();
+    hd.spend_hit_die("d8", 8);
+    assert_eq!(Session::describe_change(&base, &hd), Some("hit dice"));
+
+    let mut ab = base.clone();
+    ab.set_ability_override("DEX", 18);
+    assert_eq!(Session::describe_change(&base, &ab), Some("an ability score"));
+
+    let mut insp = base.clone();
+    insp.inspiration = !insp.inspiration;
+    assert_eq!(Session::describe_change(&base, &insp), Some("inspiration"));
+}

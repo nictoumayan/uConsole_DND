@@ -37,9 +37,9 @@ does is the actual test of that bet.
 
 ---
 
-## 1. Stop polling for input
+## 1. Stop polling for input — DONE
 
-**Half an hour. Do it first because it is free.**
+**Half an hour. Done first because it was free.**
 
 The event loop polls every 250 milliseconds:
 
@@ -52,12 +52,12 @@ three-hour battery and a four-hour session. The comment above it claims polling
 is needed to catch resizes — that is wrong. `event::read()` blocks until
 something happens and returns `Event::Resize` like any other event.
 
-Replace the poll with a blocking read. The only reason to keep a timeout is if
-something later needs to tick on its own; nothing does.
+Replaced with a blocking read. Nothing in the app needs a periodic tick, so
+there is no timeout to keep.
 
 ---
 
-## 2. Undo
+## 2. Undo — DONE
 
 **Half a day.**
 
@@ -67,13 +67,13 @@ wrong condition, spending the wrong limited use, or a mis-keyed death save is
 not — and all three happen mid-combat, which is exactly when you are least able
 to reason about repairing state by hand.
 
-A single level of undo over the last session mutation covers nearly all of it:
-snapshot the `Session` before each mutating action, `u`… (taken) — bind it to
-`z`… (taken) — bind it to `Ctrl-Z`, and show what was undone in the footer.
+Shipped as thirty levels rather than one, on `Ctrl-Z`. The snapshot is taken
+around the whole keystroke rather than inside each mutating method, so a
+mutation added later is covered without anyone remembering to cover it, and the
+label is derived by comparing the two sessions rather than recorded by hand.
 
-Worth deciding: whether undo also reverses the roll that accompanied an action
-(spending a hit die rolls dice and heals). Reversing the heal without removing
-the roll from the log is probably right — the dice were really rolled.
+The open question resolved as expected: undo leaves the roll log alone. The
+dice really came up what they came up.
 
 ---
 

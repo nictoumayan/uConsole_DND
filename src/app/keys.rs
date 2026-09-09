@@ -13,6 +13,24 @@ pub fn handle(app: &mut App, code: KeyCode, mods: KeyModifiers) {
         return;
     }
 
+    // Ctrl-Z is handled before dispatch so an undo cannot record itself as
+    // another change to undo. Raw mode means the terminal hands it to us
+    // rather than suspending the process.
+    if mods.contains(KeyModifiers::CONTROL) && matches!(code, KeyCode::Char('z')) {
+        app.undo();
+        return;
+    }
+
+    // Snapshot around the whole dispatch. Doing it here rather than inside
+    // each mutating method means a mutation added later is covered without
+    // anyone remembering to cover it.
+    let before = app.session.clone();
+    app.undo_note = None;
+    dispatch(app, code, mods);
+    app.record_undo(before);
+}
+
+fn dispatch(app: &mut App, code: KeyCode, _mods: KeyModifiers) {
     match app.mode {
         // Numeric entry: digits accumulate, enter applies, esc abandons.
         Mode::Number(_) => match code {
