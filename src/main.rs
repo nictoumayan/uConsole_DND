@@ -10,7 +10,7 @@
 use anyhow::{bail, Context, Result};
 use vellum::ddb::{fetch, Character};
 use vellum::content::Tab;
-use vellum::portrait::{fetch_avatar, Portrait};
+use vellum::portrait::Portrait;
 use vellum::app::{self, App};
 use vellum::session::Session;
 use vellum::{content, derive, device, paths, render, tabs};
@@ -39,13 +39,7 @@ fn run() -> Result<()> {
         Some(other) => bail!("unknown command {other:?}\n{USAGE}"),
         // On the device you want the sheet, not a usage screen. Fall back to
         // usage only when there is nothing cached to show.
-        None => match default_id() {
-            Ok(_) => cmd_tui(None),
-            Err(_) => {
-                println!("{USAGE}");
-                Ok(())
-            }
-        },
+        None => cmd_tui(None),
     }
 }
 
@@ -80,41 +74,95 @@ fn cmd_fetch(target: &str) -> Result<()> {
     let id = fetch::parse_character_id(target)?;
     eprintln!("fetching {} ...", fetch::character_url(id));
 
-    let raw = fetch::fetch_raw(id)?;
-
-    // Parse before writing, so a broken payload never replaces a good snapshot.
-    let parsed: Character =
-        serde_json::from_str(&raw).context("D&D Beyond returned something that is not a character")?;
-    if parsed.name.is_empty() {
-        bail!("payload parsed but has no character name — refusing to cache it");
+    // The same loader the in-app load screen uses, so the two paths cannot
+    // drift into caching different things.
+    let (ch, _session, _path, portrait) = app::load_character(id)?;
+    eprintln!("cached {} -> {}", ch.name, paths::snapshot_path(id)?.display());
+    match portrait {
+        Some(_) => eprintln!("cached portrait"),
+        None if ch.avatar_url.is_empty() => eprintln!("no portrait on this character"),
+        None => eprintln!("portrait unavailable — sheet still works"),
     }
+    Ok(())
+}
 
-    paths::ensure_dir()?;
+fn default_id() -> Result<i64> {
+    let p = paths::default_id_path()?;
+    let s = std::fs::read_to_string(&p)
+        .context("no default character — run `vellum fetch <id|url>` first")?;
+    s.trim().parse::<i64>().context("corrupt default character id")
+}
+
+fn resolve_id(arg: Option<&str>) -> Result<i64> {
+    match arg {
+        Some(a) => fetch::parse_character_id(a),
+        None => default_id(),
+    }
+}
+
+fn load(id: i64) -> Result<Character> {
     let path = paths::snapshot_path(id)?;
-    std::fs::write(&path, raw.as_bytes())
-        .with_context(|| format!("writing {}", path.display()))?;
-    std::fs::write(paths::default_id_path()?, id.to_string())?;
+    let raw = std::fs::read_to_string(&path)
+        .with_context(|| format!("no snapshot for {id} — run `vellum fetch {id}`"))?;
+    serde_json::from_str(&raw).context("parsing cached snapshot")
+}
 
-    eprintln!(
-        "cached {} ({} KB) -> {}",
-        parsed.name,
-        raw.len() / 1024,
-        path.display()
+fn load_portrait(id: i64, cols: usize, rows: usize) -> Option<Portrait> {
+    let bytes = paths::avatar_path(id).ok().and_then(|p| std::fs::read(p).ok())?;
+    Portrait::decode(&bytes, cols, rows).ok()
+}
+
+fn cmd_tui(id_arg: Option<&str>) -> Result<()> {
+    // Nothing cached is not an error: it is a first run, and the app opens on
+    // the load screen rather than printing usage at someone who just wants
+    // their sheet.
+    let Ok(id) = resolve_id(id_arg) else {
+        let mut app = App::new(
+            derive::derive(&Character::default()),
+            Character::default(),
+            Session::seed(0, 0, 0, false),
+            paths::ensure_dir()?.join("unloaded.session.json"),
+            None,
+        );
+        app.open_load();
+        return app::run(app);
+    };
+
+    let ch = load(id)?;
+    let portrait = load_portrait(id, 24, 12);
+    paths::ensure_dir()?;
+    let session_path = paths::session_path(id)?;
+    let mut session = Session::load_or_seed(
+        &session_path,
+        id,
+        ch.removed_hit_points,
+        ch.temporary_hit_points,
+        ch.inspiration,
     );
+    if session.hit_dice_used.is_empty() {
+        let pools: Vec<(String, u32)> = ch
+            .classes
+            .iter()
+            .filter(|c| c.definition.hit_dice > 0 && c.hit_dice_used > 0)
+            .map(|c| (format!("d{}", c.definition.hit_dice), c.hit_dice_used as u32))
+            .collect();
+        session.seed_hit_dice(&pools);
+    }
+    let sheet = derive::derive_with(&ch, &session.ability_overrides);
+    app::run(App::new(sheet, ch, session, session_path, portrait))
+}
 
-    // Portrait is best-effort: a missing avatar must never fail the import,
-    // and `show` falls back to a placeholder.
-    if parsed.avatar_url.is_empty() {
-        eprintln!("no portrait on this character");
-    } else {
-        match fetch_avatar(&parsed.avatar_url) {
-            Ok(bytes) => {
-                let ap = paths::avatar_path(id)?;
-                std::fs::write(&ap, &bytes)?;
-                eprintln!("cached portrait ({} KB)", bytes.len() / 1024);
-            }
-            Err(e) => eprintln!("portrait unavailable ({e}) — sheet still works"),
+/// Deletes only the session. The snapshot and the portrait are untouched —
+/// this is "start the campaign fresh", not "forget my character".
+fn cmd_reset(id_arg: Option<&str>) -> Result<()> {
+    let id = resolve_id(id_arg)?;
+    let p = paths::session_path(id)?;
+    match std::fs::remove_file(&p) {
+        Ok(()) => eprintln!("cleared play state for {id}"),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            eprintln!("no play state for {id} — nothing to clear")
         }
+        Err(e) => return Err(e).with_context(|| format!("removing {}", p.display())),
     }
     Ok(())
 }
@@ -187,80 +235,6 @@ fn parse_show_args(args: &[String]) -> Result<ShowOpts> {
         }
     }
     Ok(o)
-}
-
-fn default_id() -> Result<i64> {
-    let p = paths::default_id_path()?;
-    let s = std::fs::read_to_string(&p)
-        .context("no default character — run `vellum fetch <id|url>` first")?;
-    s.trim().parse::<i64>().context("corrupt default character id")
-}
-
-fn resolve_id(arg: Option<&str>) -> Result<i64> {
-    match arg {
-        Some(a) => fetch::parse_character_id(a),
-        None => default_id(),
-    }
-}
-
-fn load(id: i64) -> Result<Character> {
-    let path = paths::snapshot_path(id)?;
-    let raw = std::fs::read_to_string(&path)
-        .with_context(|| format!("no snapshot for {id} — run `vellum fetch {id}`"))?;
-    serde_json::from_str(&raw).context("parsing cached snapshot")
-}
-
-fn load_portrait(id: i64, cols: usize, rows: usize) -> Option<Portrait> {
-    let bytes = paths::avatar_path(id).ok().and_then(|p| std::fs::read(p).ok())?;
-    Portrait::decode(&bytes, cols, rows).ok()
-}
-
-fn cmd_tui(id_arg: Option<&str>) -> Result<()> {
-    let id = resolve_id(id_arg)?;
-    let ch = load(id)?;
-    let portrait = load_portrait(id, 24, 12);
-
-    paths::ensure_dir()?;
-    let session_path = paths::session_path(id)?;
-    // Seeded from whatever the snapshot last recorded, so a first launch
-    // agrees with the website rather than starting you at full health.
-    let mut session = Session::load_or_seed(
-        &session_path,
-        id,
-        ch.removed_hit_points,
-        ch.temporary_hit_points,
-        ch.inspiration,
-    );
-    // Seed spent hit dice from the website on a first launch, the same way
-    // hit points are seeded.
-    if session.hit_dice_used.is_empty() {
-        let pools: Vec<(String, u32)> = ch
-            .classes
-            .iter()
-            .filter(|c| c.definition.hit_dice > 0 && c.hit_dice_used > 0)
-            .map(|c| (format!("d{}", c.definition.hit_dice), c.hit_dice_used as u32))
-            .collect();
-        session.seed_hit_dice(&pools);
-    }
-
-    // Derive with the player's corrections applied, not without them.
-    let sheet = derive::derive_with(&ch, &session.ability_overrides);
-    app::run(App::new(sheet, ch, session, session_path), portrait)
-}
-
-/// Deletes only the session. The snapshot and the portrait are untouched —
-/// this is "start the campaign fresh", not "forget my character".
-fn cmd_reset(id_arg: Option<&str>) -> Result<()> {
-    let id = resolve_id(id_arg)?;
-    let p = paths::session_path(id)?;
-    match std::fs::remove_file(&p) {
-        Ok(()) => eprintln!("cleared play state for {id}"),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            eprintln!("no play state for {id} — nothing to clear")
-        }
-        Err(e) => return Err(e).with_context(|| format!("removing {}", p.display())),
-    }
-    Ok(())
 }
 
 fn cmd_show(args: &[String]) -> Result<()> {

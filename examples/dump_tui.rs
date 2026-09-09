@@ -20,7 +20,7 @@ fn main() -> anyhow::Result<()> {
     let session = vellum::session::Session::seed(
         ch.id, ch.removed_hit_points, ch.temporary_hit_points, ch.inspiration);
     let path = std::env::temp_dir().join("vellum-dump-session.json");
-    let mut app = App::new(sheet, ch, session, path);
+    let mut app = App::new(sheet, ch, session, path, portrait);
     for k in a.iter().skip(2) {
         let code = match k.as_str() {
             "ENTER" => KeyCode::Enter,
@@ -34,7 +34,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     let mut term = Terminal::new(TestBackend::new(80, 22))?;
-    term.draw(|f| ui::draw(f, &mut app, portrait.as_ref()))?;
+    term.draw(|f| ui::draw(f, &mut app))?;
     let buf = term.backend().buffer().clone();
     for y in 0..22 {
         let line: String = (0..80).map(|x| buf[(x, y)].symbol().to_string()).collect();

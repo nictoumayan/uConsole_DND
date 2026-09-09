@@ -379,6 +379,36 @@ pub fn can_rest(current_hp: i32) -> bool {
     current_hp >= 1
 }
 
+/// Which ability a weapon attack uses.
+///
+/// "When making an attack with a Finesse weapon, use your choice of your
+/// Strength or Dexterity modifier for the attack and damage rolls." Choice
+/// means the better one, every time, so that is what this returns.
+pub fn attack_ability(is_ranged: bool, finesse: bool, str_mod: i32, dex_mod: i32) -> Ability {
+    if finesse {
+        if dex_mod >= str_mod { Ability::Dex } else { Ability::Str }
+    } else if is_ranged {
+        Ability::Dex
+    } else {
+        Ability::Str
+    }
+}
+
+/// Whether the character is proficient with a weapon, from category or name.
+///
+/// `proficiencies` are the title-cased strings the sheet already derives:
+/// "Simple Weapons", "Martial Weapons", "Shortsword".
+pub fn weapon_proficient(category_id: i32, weapon_type: &str, proficiencies: &[String]) -> bool {
+    let category = match category_id {
+        1 => "Simple Weapons",
+        2 => "Martial Weapons",
+        _ => "",
+    };
+    proficiencies
+        .iter()
+        .any(|p| p == category || p.eq_ignore_ascii_case(weapon_type))
+}
+
 /// Carrying capacity is Strength score times 15.
 pub fn carrying_capacity(strength: i32) -> i32 {
     strength * 15

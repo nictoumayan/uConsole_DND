@@ -23,12 +23,12 @@ fn app() -> App {
         std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
     ));
     let session = Session::seed(ch.id, ch.removed_hit_points, ch.temporary_hit_points, false);
-    App::new(sheet, ch, session, path)
+    App::new(sheet, ch, session, path, None)
 }
 
 fn screen(app: &mut App) -> String {
     let mut term = Terminal::new(TestBackend::new(COLS, ROWS)).unwrap();
-    term.draw(|f| ui::draw(f, app, None)).unwrap();
+    term.draw(|f| ui::draw(f, app)).unwrap();
     let buf = term.backend().buffer().clone();
     (0..ROWS)
         .map(|y| {
@@ -117,7 +117,7 @@ fn it_survives_a_terminal_far_smaller_than_the_panel() {
     let mut a = app();
     for (w, h) in [(20u16, 6u16), (40, 10), (200, 60)] {
         let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
-        term.draw(|f| ui::draw(f, &mut a, None)).unwrap();
+        term.draw(|f| ui::draw(f, &mut a)).unwrap();
     }
 }
 

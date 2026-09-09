@@ -38,7 +38,7 @@ fn main() -> anyhow::Result<()> {
         ch.inspiration,
     );
     let sheet = vellum::derive::derive_with(&ch, &session.ability_overrides);
-    let mut app = App::new(sheet, ch, session, std::env::temp_dir().join("preview.json"))
+    let mut app = App::new(sheet, ch, session, std::env::temp_dir().join("preview.json"), portrait)
         .with_seed(0xBEEF);
 
     for k in a.iter().skip(3) {
@@ -52,7 +52,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     let mut term = Terminal::new(TestBackend::new(80, 22))?;
-    term.draw(|f| ui::draw(f, &mut app, portrait.as_ref()))?;
+    term.draw(|f| ui::draw(f, &mut app))?;
     let buf = term.backend().buffer().clone();
 
     // Coalesce runs of identical styling into one span, or the page becomes

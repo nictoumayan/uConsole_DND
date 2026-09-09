@@ -22,7 +22,7 @@ fn app() -> App {
         std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
     ));
     let session = Session::seed(ch.id, ch.removed_hit_points, ch.temporary_hit_points, false);
-    App::new(sheet, ch, session, path)
+    App::new(sheet, ch, session, path, None)
 }
 
 fn press(a: &mut App, c: KeyCode) {
@@ -866,4 +866,161 @@ fn you_cannot_rest_at_zero_hit_points() {
     assert_eq!(a.current_hp(), 0, "a long rest at 0 hp should be refused");
     assert!(a.last_error.is_some(), "the refusal should be explained");
     assert_eq!(a.mode, Mode::List);
+}
+
+// -- attacks ---------------------------------------------------------------
+
+#[test]
+fn equipped_weapons_become_rollable_attacks_on_the_actions_tab() {
+    let mut a = seeded();
+    go(&mut a, Tab::Actions);
+    let rows = a.rows();
+    let leather_is_not_an_attack = !rows.iter().any(|r| r.name == "Leather");
+    assert!(leather_is_not_an_attack, "armour is not a weapon");
+
+    let dagger = rows.iter().find(|r| r.name == "Dagger").expect("an equipped dagger");
+    assert!(dagger.roll.is_some(), "an attack should roll");
+    assert!(dagger.damage.is_some(), "an attack should have damage");
+    assert!(dagger.meta.contains("to hit"));
+}
+
+#[test]
+fn enter_rolls_an_attack_and_shift_d_rolls_its_damage() {
+    let mut a = seeded();
+    go(&mut a, Tab::Actions);
+    press(&mut a, KeyCode::Char('/'));
+    typed(&mut a, "dagger");
+    press(&mut a, KeyCode::Enter);
+
+    press(&mut a, KeyCode::Enter); // attack
+    let hit = a.last_roll().expect("an attack roll").clone();
+    assert_eq!(hit.expr.sides, 20, "an attack roll is a d20");
+    assert_eq!(hit.label, "Dagger");
+    assert_eq!(a.mode, Mode::List, "rolling should not open the detail view");
+
+    press(&mut a, KeyCode::Char('D')); // damage
+    let dmg = a.last_roll().expect("a damage roll");
+    assert_eq!(dmg.expr.sides, 4, "a dagger deals d4");
+    assert!(dmg.label.to_lowercase().contains("piercing"));
+}
+
+#[test]
+fn a_row_with_no_attack_roll_opens_its_detail_instead() {
+    // Sneak Attack adds damage to someone else's roll; it has none of its own.
+    let mut a = seeded();
+    go(&mut a, Tab::Actions);
+    press(&mut a, KeyCode::Char('/'));
+    typed(&mut a, "sneak attack");
+    press(&mut a, KeyCode::Enter);
+    let row = a.selected_row().unwrap();
+    assert!(row.roll.is_none(), "Sneak Attack should have no to-hit");
+    assert!(row.damage.is_some(), "but it should still roll damage");
+
+    press(&mut a, KeyCode::Enter);
+    assert_eq!(a.mode, Mode::Detail, "enter should open, not roll");
+}
+
+#[test]
+fn an_attack_roll_goes_through_the_rules_engine() {
+    // Poisoned gives Disadvantage on attack rolls.
+    let mut a = seeded();
+    a.session.add_condition("Poisoned");
+    go(&mut a, Tab::Actions);
+    press(&mut a, KeyCode::Char('/'));
+    typed(&mut a, "dagger");
+    press(&mut a, KeyCode::Enter);
+    press(&mut a, KeyCode::Enter);
+
+    let r = a.last_roll().unwrap();
+    assert_eq!(r.dice.len(), 2, "disadvantage rolls two dice");
+    assert_eq!(r.kept, *r.dice.iter().min().unwrap());
+}
+
+#[test]
+fn damage_is_not_touched_by_conditions_or_exhaustion() {
+    // Those modify d20 tests. A damage roll is not one.
+    let mut a = seeded();
+    a.session.add_condition("Poisoned");
+    a.session.adjust_exhaustion(3);
+    go(&mut a, Tab::Actions);
+    press(&mut a, KeyCode::Char('/'));
+    typed(&mut a, "dagger");
+    press(&mut a, KeyCode::Enter);
+    press(&mut a, KeyCode::Char('D'));
+
+    let r = a.last_roll().unwrap();
+    assert_eq!(r.dice.len(), 1, "damage should be a single roll");
+    assert_eq!(r.advantage, vellum::dice::Advantage::Normal);
+}
+
+// -- loading a character ---------------------------------------------------
+
+#[test]
+fn the_load_screen_accepts_every_url_shape_and_rejects_junk() {
+    let mut a = seeded();
+    press(&mut a, KeyCode::Char('L'));
+    assert_eq!(a.mode, Mode::Load);
+
+    typed(&mut a, "https://www.dndbeyond.com/characters/147474826/powhJe");
+    press(&mut a, KeyCode::Enter);
+    assert_eq!(a.pending_load, Some(147474826), "should hand the id to the loop");
+    a.pending_load = None;
+
+    press(&mut a, KeyCode::Esc);
+    press(&mut a, KeyCode::Char('L'));
+    typed(&mut a, "not a url");
+    press(&mut a, KeyCode::Enter);
+    assert!(a.pending_load.is_none(), "junk must not reach the network");
+    assert!(matches!(a.load_status, vellum::app::state::LoadStatus::Failed(_)));
+}
+
+#[test]
+fn typing_a_url_does_not_fire_commands() {
+    // A D&D Beyond URL contains d, h, c, r, s, digits — all of them bound.
+    let mut a = seeded();
+    let hp = a.current_hp();
+    press(&mut a, KeyCode::Char('L'));
+    typed(&mut a, "https://www.dndbeyond.com/characters/147474826");
+    assert_eq!(a.load_buffer, "https://www.dndbeyond.com/characters/147474826");
+    assert_eq!(a.current_hp(), hp, "a keystroke damaged the character");
+    assert_eq!(a.tab, Tab::Vitals, "a digit changed tabs");
+    assert!(!a.quit);
+}
+
+#[test]
+fn adopting_a_character_replaces_everything() {
+    let mut a = seeded();
+    press(&mut a, KeyCode::Char('d'));
+    typed(&mut a, "10");
+    press(&mut a, KeyCode::Enter);
+    go(&mut a, Tab::Gear);
+    assert!(!a.rolls.is_empty() || a.session.damage > 0);
+
+    let ch: Character =
+        serde_json::from_str(include_str!("fixtures/srd_rogue.json")).unwrap();
+    let fresh_session = Session::seed(ch.id, 0, 0, false);
+    a.adopt(ch, fresh_session, std::env::temp_dir().join("adopted.json"), None);
+
+    assert_eq!(a.tab, Tab::Vitals, "should land on vitals");
+    assert_eq!(a.session.damage, 0, "the new character's own state");
+    assert!(a.rolls.is_empty(), "the previous character's rolls should not carry over");
+    assert_eq!(a.mode, Mode::List);
+}
+
+#[test]
+fn escape_will_not_strand_you_on_an_empty_first_run() {
+    let ch = Character::default();
+    let sheet = vellum::derive::derive(&ch);
+    let mut a = App::new(
+        sheet,
+        ch,
+        Session::seed(0, 0, 0, false),
+        std::env::temp_dir().join("empty.json"),
+        None,
+    );
+    a.open_load();
+    assert!(a.is_empty());
+    press(&mut a, KeyCode::Esc);
+    assert_eq!(a.mode, Mode::Load, "there is nothing to escape to yet");
+    assert!(!a.quit);
 }

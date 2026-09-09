@@ -239,3 +239,57 @@ fn hit_dice_come_from_class_level_and_die_size() {
     assert_eq!(s.hit_dice[0].total, 8, "one die per class level");
     assert_eq!(s.hit_dice[0].label(), "d8");
 }
+
+// -- attacks ---------------------------------------------------------------
+
+#[test]
+fn a_finesse_weapon_uses_the_better_of_strength_and_dexterity() {
+    // "use your choice of your Strength or Dexterity modifier" — choice means
+    // the better one. STR 8 is -1, DEX 17 is +3.
+    let ch: Character = serde_json::from_str(include_str!("fixtures/srd_rogue.json")).unwrap();
+    let s = derive(&ch);
+    let dagger = s.attacks.iter().find(|a| a.name == "Dagger").expect("an equipped dagger");
+    assert_eq!(dagger.ability, Some(vellum::derive::tables::Ability::Dex));
+    assert_eq!(dagger.to_hit, Some(6), "DEX +3 plus proficiency +3");
+    assert_eq!(dagger.damage, "1d4+3");
+    assert_eq!(dagger.damage_type, "Piercing");
+    assert!(dagger.proficient, "a Simple weapon with Simple Weapons proficiency");
+    assert!(dagger.notes.contains("Finesse"));
+}
+
+#[test]
+fn only_equipped_weapons_become_attacks() {
+    let ch: Character = serde_json::from_str(include_str!("fixtures/srd_rogue.json")).unwrap();
+    let s = derive(&ch);
+    assert!(s.attacks.iter().any(|a| a.name == "Dagger"));
+    assert!(
+        !s.attacks.iter().any(|a| a.name == "Greatclub"),
+        "an unequipped weapon is not an attack you can make"
+    );
+    assert!(!s.attacks.iter().any(|a| a.name == "Leather"), "armour is not a weapon");
+}
+
+#[test]
+fn a_feature_with_its_own_dice_has_damage_but_no_attack_roll() {
+    // Sneak Attack rides on someone else's attack roll. Its dice arrive
+    // already scaled to level, so no description prose is parsed.
+    let ch: Character = serde_json::from_str(include_str!("fixtures/srd_rogue.json")).unwrap();
+    let s = derive(&ch);
+    let sneak = s.attacks.iter().find(|a| a.name == "Sneak Attack").expect("Sneak Attack");
+    assert_eq!(sneak.to_hit, None);
+    assert_eq!(sneak.damage, "4d6");
+    assert_eq!(sneak.damage_dice, (4, 6));
+}
+
+#[test]
+fn correcting_a_score_moves_the_attack_with_it() {
+    // The whole reason attacks derive from the sheet rather than the payload.
+    use vellum::derive::{derive_with, AbilityOverrides};
+    let ch: Character = serde_json::from_str(include_str!("fixtures/srd_rogue.json")).unwrap();
+    let mut o = AbilityOverrides::new();
+    o.insert("DEX".into(), 18);
+    let s = derive_with(&ch, &o);
+    let dagger = s.attacks.iter().find(|a| a.name == "Dagger").unwrap();
+    assert_eq!(dagger.to_hit, Some(7), "DEX +4 plus proficiency +3");
+    assert_eq!(dagger.damage, "1d4+4");
+}

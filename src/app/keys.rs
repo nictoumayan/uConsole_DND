@@ -55,6 +55,16 @@ pub fn handle(app: &mut App, code: KeyCode, mods: KeyModifiers) {
             _ => {}
         },
 
+        // A URL is text: no digit may jump tabs and no letter may fire a
+        // command while it is being pasted or typed.
+        Mode::Load => match code {
+            KeyCode::Esc => app.escape(),
+            KeyCode::Enter => app.submit_load(),
+            KeyCode::Backspace => app.pop_load(),
+            KeyCode::Char(c) => app.push_load(c),
+            _ => {}
+        },
+
         Mode::RollLog => match code {
             KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('l') => app.escape(),
             _ => {}
@@ -125,6 +135,7 @@ pub fn handle(app: &mut App, code: KeyCode, mods: KeyModifiers) {
             KeyCode::Char('U') => app.restore_use(),
             KeyCode::Char('l') => app.open_roll_log(),
             KeyCode::Char('o') => app.open_abilities(),
+            KeyCode::Char('L') => app.open_load(),
 
             // Play state. These work from any tab — mid-combat you should not
             // have to navigate somewhere before you can take damage.
@@ -140,10 +151,14 @@ pub fn handle(app: &mut App, code: KeyCode, mods: KeyModifiers) {
             KeyCode::Char('s') if app.is_dying() => app.death_save(true),
             KeyCode::Char('f') if app.is_dying() => app.death_save(false),
 
-            KeyCode::Enter | KeyCode::Right if app.tab == Tab::Roll => {
+            // Enter does the obvious thing for the row, not for the tab: a
+            // row that rolls, rolls; anything else opens.
+            KeyCode::Enter | KeyCode::Right if app.selected_is_rollable() => {
                 app.roll_selected(Advantage::Normal)
             }
             KeyCode::Enter | KeyCode::Right => app.open_detail(),
+            KeyCode::Char('D') => app.roll_damage(),
+            KeyCode::Char('v') => app.open_detail(),
             KeyCode::Char('j') | KeyCode::Down => app.move_selection(1),
             KeyCode::Char('k') | KeyCode::Up => app.move_selection(-1),
             KeyCode::PageDown | KeyCode::Char(' ') => app.move_selection(app.page_rows as isize),

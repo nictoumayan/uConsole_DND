@@ -319,3 +319,24 @@ fn resting_requires_at_least_one_hit_point() {
     assert!(can_rest(1));
     assert!(can_rest(55));
 }
+
+#[test]
+fn attack_ability_follows_finesse_and_range() {
+    // Finesse takes the better; ranged takes Dexterity; melee takes Strength.
+    assert_eq!(attack_ability(false, true, -1, 3), Ability::Dex);
+    assert_eq!(attack_ability(false, true, 4, 2), Ability::Str);
+    assert_eq!(attack_ability(true, false, 4, 2), Ability::Dex, "ranged is always DEX");
+    assert_eq!(attack_ability(false, false, -1, 3), Ability::Str, "plain melee is STR");
+}
+
+#[test]
+fn weapon_proficiency_comes_from_category_or_name() {
+    let simple = vec!["Simple Weapons".to_string()];
+    assert!(weapon_proficient(1, "Dagger", &simple), "category 1 is Simple");
+    assert!(!weapon_proficient(2, "Greatsword", &simple), "category 2 is Martial");
+
+    let named = vec!["Rapier".to_string()];
+    assert!(weapon_proficient(2, "Rapier", &named), "named individually");
+    assert!(weapon_proficient(2, "rapier", &named), "and case-insensitively");
+    assert!(!weapon_proficient(2, "Greatsword", &named));
+}

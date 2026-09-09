@@ -110,6 +110,8 @@ pub enum RollKind {
     Check,
     Save,
     Initiative,
+    /// A weapon attack roll.
+    Attack,
     /// A raw d20 against DC 10, with its own success/failure bookkeeping.
     DeathSave,
 }
@@ -127,6 +129,16 @@ pub struct Row {
     pub roll: Option<RollSpec>,
     /// Present when the row is a limited resource.
     pub uses: Option<UseSpec>,
+    /// Present on an attack: the damage expression to roll with `D`.
+    pub damage: Option<DamageSpec>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DamageSpec {
+    pub count: u32,
+    pub sides: u32,
+    pub modifier: i32,
+    pub damage_type: String,
 }
 
 impl Row {
@@ -138,7 +150,15 @@ impl Row {
         if short.trim().is_empty() {
             short = first_line(&detail);
         }
-        Row { name: name.into(), meta: meta.into(), snippet: short, detail, roll: None, uses: None }
+        Row {
+            name: name.into(),
+            meta: meta.into(),
+            snippet: short,
+            detail,
+            roll: None,
+            uses: None,
+            damage: None,
+        }
     }
 
     fn rollable(
@@ -157,6 +177,7 @@ impl Row {
             detail: String::new(),
             roll: Some(RollSpec { modifier, kind, ability, skill }),
             uses: None,
+            damage: None,
         }
     }
 
@@ -170,7 +191,7 @@ pub fn rows_for(tab: Tab, ch: &Character, sheet: &Sheet) -> Vec<Row> {
     match tab {
         Tab::Vitals | Tab::Skills => Vec::new(), // rendered as fixed panes
         Tab::Roll => rollables(sheet),
-        Tab::Actions => actions(ch),
+        Tab::Actions => actions(ch, sheet),
         Tab::Spells => spells(ch),
         Tab::Gear => gear(ch),
         Tab::Feats => feats(ch, sheet, sheet.total_level),
@@ -246,8 +267,52 @@ fn rollables(sheet: &Sheet) -> Vec<Row> {
 }
 
 
-fn actions(ch: &Character) -> Vec<Row> {
+fn actions(ch: &Character, sheet: &Sheet) -> Vec<Row> {
     let mut out = Vec::new();
+
+    // Attacks first: mid-combat this is the tab you open to hit something.
+    for atk in &sheet.attacks {
+        let meta = match atk.to_hit {
+            Some(t) => format!("{t:+} to hit"),
+            None => "no attack roll".to_string(),
+        };
+        let mut snippet = atk.damage.clone();
+        if !atk.damage_type.is_empty() {
+            snippet.push(' ');
+            snippet.push_str(&atk.damage_type.to_lowercase());
+        }
+        if !atk.range.is_empty() {
+            snippet.push_str(&format!("  {}", atk.range));
+        }
+        if !atk.notes.is_empty() {
+            snippet.push_str(&format!("  ({})", atk.notes));
+        }
+
+        let mut row = Row::new(&atk.name, meta, "", "");
+        row.snippet = snippet;
+        row.detail = format!(
+            "{}\n\nDamage {} {}\n{}\n{}",
+            atk.name,
+            atk.damage,
+            atk.damage_type,
+            if atk.range.is_empty() { String::new() } else { format!("Range {}", atk.range) },
+            atk.notes
+        );
+        row.roll = atk.to_hit.map(|t| RollSpec {
+            modifier: t,
+            kind: RollKind::Attack,
+            ability: atk.ability,
+            skill: None,
+        });
+        row.damage = Some(DamageSpec {
+            count: atk.damage_dice.0,
+            sides: atk.damage_dice.1,
+            modifier: atk.damage_modifier,
+            damage_type: atk.damage_type.clone(),
+        });
+        out.push(row);
+    }
+
     for (src, list) in [
         ("class", &ch.actions.class),
         ("race", &ch.actions.race),

@@ -188,6 +188,71 @@
         "resetType": "Dawn",
         "resetTypeDescription": ""
       }
+    },
+    {
+      "id": 702,
+      "quantity": 1,
+      "equipped": true,
+      "isAttuned": false,
+      "definition": {
+        "name": "Dagger",
+        "type": "Dagger",
+        "filterType": "Weapon",
+        "rarity": "Common",
+        "description": "<p>A simple finesse weapon.</p>",
+        "canAttune": false,
+        "damage": {
+          "diceCount": 1,
+          "diceValue": 4,
+          "fixedValue": null,
+          "diceString": "1d4"
+        },
+        "damageType": "Piercing",
+        "attackType": 1,
+        "range": 20,
+        "longRange": 60,
+        "categoryId": 1,
+        "properties": [
+          {
+            "id": 2,
+            "name": "Finesse",
+            "description": "<p>Use Strength or Dexterity.</p>"
+          },
+          {
+            "id": 4,
+            "name": "Thrown",
+            "description": "<p>Can be thrown.</p>"
+          }
+        ],
+        "grantedModifiers": []
+      }
+    },
+    {
+      "id": 703,
+      "quantity": 1,
+      "equipped": false,
+      "isAttuned": false,
+      "definition": {
+        "name": "Greatclub",
+        "type": "Greatclub",
+        "filterType": "Weapon",
+        "rarity": "Common",
+        "description": "<p>A heavy club.</p>",
+        "canAttune": false,
+        "damage": {
+          "diceCount": 1,
+          "diceValue": 8,
+          "fixedValue": null,
+          "diceString": "1d8"
+        },
+        "damageType": "Bludgeoning",
+        "attackType": 1,
+        "range": 5,
+        "longRange": 0,
+        "categoryId": 1,
+        "properties": [],
+        "grantedModifiers": []
+      }
     }
   ],
   "modifiers": {
@@ -407,6 +472,21 @@
           "maxUses": 2,
           "numberUsed": 0,
           "resetType": 1
+        }
+      },
+      {
+        "id": 502,
+        "name": "Sneak Attack",
+        "description": "<p>Extra damage once per turn.</p>",
+        "snippet": "Extra damage once per turn.",
+        "activation": {
+          "activationType": 8
+        },
+        "dice": {
+          "diceCount": 4,
+          "diceValue": 6,
+          "fixedValue": null,
+          "diceString": "4d6"
         }
       }
     ],

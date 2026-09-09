@@ -89,6 +89,25 @@ pub struct Sheet {
     /// One pool per die size, so a multiclass character keeps its 5d8 and its
     /// 3d10 apart rather than averaging them into nonsense.
     pub hit_dice: Vec<HitDicePool>,
+    /// Weapon attacks, plus class features that carry their own dice.
+    pub attacks: Vec<Attack>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Attack {
+    pub name: String,
+    /// None for a feature like Sneak Attack that adds damage to someone
+    /// else's attack roll rather than making its own.
+    pub to_hit: Option<i32>,
+    /// Dice notation as rolled, e.g. "1d4+4".
+    pub damage: String,
+    pub damage_dice: (u32, u32),
+    pub damage_modifier: i32,
+    pub damage_type: String,
+    pub range: String,
+    pub proficient: bool,
+    pub ability: Option<Ability>,
+    pub notes: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -160,6 +179,14 @@ pub fn derive(ch: &Character) -> Sheet {
 }
 
 pub fn derive_with(ch: &Character, overrides: &AbilityOverrides) -> Sheet {
+    // Attacks depend on the finished sheet (ability modifiers, proficiency
+    // bonus, weapon proficiencies), so they are a second pass over it.
+    let mut sheet = derive_base(ch, overrides);
+    sheet.attacks = derive_attacks(ch, &sheet);
+    sheet
+}
+
+fn derive_base(ch: &Character, overrides: &AbilityOverrides) -> Sheet {
     let total_level: i32 = ch.classes.iter().map(|c| c.level).sum();
     let pb = proficiency_bonus(total_level);
     let scores = derive_scores(ch, overrides);
@@ -246,7 +273,99 @@ pub fn derive_with(ch: &Character, overrides: &AbilityOverrides) -> Sheet {
         carrying_capacity: crate::rules::carrying_capacity(scores[Ability::Str.index()].score),
         proficiencies: derive_proficiencies(ch),
         hit_dice: derive_hit_dice(ch),
+        attacks: Vec::new(), // filled below, once the sheet exists
     }
+}
+
+/// Weapon attacks come from equipped weapons and from features whose dice the
+/// payload has already scaled. Everything needed is structured — the damage
+/// dice, the damage type, the Finesse property — so nothing is parsed out of
+/// description prose.
+pub fn derive_attacks(ch: &Character, sheet: &Sheet) -> Vec<Attack> {
+    let mut out = Vec::new();
+    let str_mod = sheet.modifier(Ability::Str);
+    let dex_mod = sheet.modifier(Ability::Dex);
+    let pb = sheet.proficiency_bonus;
+    let profs = &sheet.proficiencies.weapons;
+
+    for item in ch.inventory.iter().filter(|i| i.equipped) {
+        let d = &item.definition;
+        let Some(dmg) = d.damage.as_ref().filter(|x| x.is_real()) else {
+            continue;
+        };
+
+        let is_ranged = d.attack_type == Some(2);
+        let finesse = d.properties.iter().any(|p| p.name.eq_ignore_ascii_case("Finesse"));
+        let ability = crate::rules::attack_ability(is_ranged, finesse, str_mod, dex_mod);
+        let ability_mod = sheet.modifier(ability);
+        let proficient = crate::rules::weapon_proficient(d.category_id, &d.kind, profs);
+
+        // A magic weapon's plus arrives on the item, not in the character's
+        // modifier list.
+        let magic: i32 = d
+            .granted_modifiers
+            .iter()
+            .filter(|m| m.kind == "bonus" && m.sub_type == "magic")
+            .filter_map(|m| m.value)
+            .sum();
+
+        let to_hit = ability_mod + if proficient { pb } else { 0 } + magic;
+        let dmg_mod = ability_mod + magic + dmg.fixed_value;
+
+        let range = if is_ranged && d.range > 0 {
+            format!("{}/{} ft", d.range, d.long_range)
+        } else if d.range > 5 {
+            format!("{} ft", d.range)
+        } else {
+            "melee".to_string()
+        };
+
+        let mut notes: Vec<String> = d.properties.iter().map(|p| p.name.clone()).collect();
+        if !proficient {
+            notes.insert(0, "not proficient".into());
+        }
+
+        out.push(Attack {
+            name: d.name.clone(),
+            to_hit: Some(to_hit),
+            damage: format!(
+                "{}d{}{}",
+                dmg.dice_count,
+                dmg.dice_value,
+                if dmg_mod == 0 { String::new() } else { format!("{dmg_mod:+}") }
+            ),
+            damage_dice: (dmg.dice_count.max(0) as u32, dmg.dice_value.max(2) as u32),
+            damage_modifier: dmg_mod,
+            damage_type: d.damage_type.clone(),
+            range,
+            proficient,
+            ability: Some(ability),
+            notes: notes.join(", "),
+        });
+    }
+
+    // Features with their own dice — Sneak Attack and its kin. These have no
+    // attack roll of their own; they ride on one.
+    for list in [&ch.actions.class, &ch.actions.race, &ch.actions.feat] {
+        for a in list {
+            let Some(dice) = a.dice.as_ref().filter(|d| d.is_real()) else {
+                continue;
+            };
+            out.push(Attack {
+                name: a.name.clone(),
+                to_hit: None,
+                damage: dice.notation(),
+                damage_dice: (dice.dice_count.max(0) as u32, dice.dice_value.max(2) as u32),
+                damage_modifier: dice.fixed_value,
+                damage_type: String::new(),
+                range: String::new(),
+                proficient: true,
+                ability: None,
+                notes: "extra damage, no attack roll of its own".into(),
+            });
+        }
+    }
+    out
 }
 
 /// A character has one Hit Point Die per class level, of that class's size.

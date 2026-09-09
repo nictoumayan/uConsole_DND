@@ -222,12 +222,47 @@ impl LimitedUse {
     }
 }
 
+#[derive(Debug, Default, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct DiceValue {
+    #[serde(deserialize_with = "nullable")]
+    pub dice_count: i32,
+    #[serde(deserialize_with = "nullable")]
+    pub dice_value: i32,
+    #[serde(deserialize_with = "nullable")]
+    pub fixed_value: i32,
+}
+
+impl DiceValue {
+    pub fn is_real(&self) -> bool {
+        self.dice_count > 0 && self.dice_value > 1
+    }
+
+    pub fn notation(&self) -> String {
+        let mut s = format!("{}d{}", self.dice_count, self.dice_value);
+        if self.fixed_value != 0 {
+            s.push_str(&format!("{:+}", self.fixed_value));
+        }
+        s
+    }
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct WeaponProperty {
+    #[serde(deserialize_with = "nullable")]
+    pub name: String,
+}
+
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Action {
     #[serde(deserialize_with = "nullable")]
     pub id: i64,
     pub limited_use: Option<LimitedUse>,
+    /// Already scaled to the character's level — the `{{scalevalue}}` in the
+    /// description text is resolved here, so no prose has to be parsed.
+    pub dice: Option<DiceValue>,
     #[serde(deserialize_with = "nullable")]
     pub name: String,
     #[serde(deserialize_with = "nullable")]
@@ -416,6 +451,22 @@ pub struct ItemDefinition {
     pub kind: String,
     #[serde(deserialize_with = "nullable")]
     pub filter_type: String,
+    pub damage: Option<DiceValue>,
+    #[serde(deserialize_with = "nullable")]
+    pub damage_type: String,
+    /// 1 = melee, 2 = ranged.
+    pub attack_type: Option<i32>,
+    #[serde(deserialize_with = "nullable")]
+    pub range: i32,
+    #[serde(deserialize_with = "nullable")]
+    pub long_range: i32,
+    /// 1 = Simple, 2 = Martial.
+    #[serde(deserialize_with = "nullable")]
+    pub category_id: i32,
+    pub properties: Vec<WeaponProperty>,
+    /// A magic weapon's bonuses arrive here rather than in the top-level
+    /// modifier list.
+    pub granted_modifiers: Vec<Modifier>,
     #[serde(deserialize_with = "nullable")]
     pub rarity: String,
     #[serde(deserialize_with = "nullable")]

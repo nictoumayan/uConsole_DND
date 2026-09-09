@@ -6,8 +6,8 @@ Fetch your character once. Everything after that is local, keyboard-driven and
 works with the wifi off.
 
 ```
+vellum                # opens the load screen on a first run
 vellum fetch https://www.dndbeyond.com/characters/147474826
-vellum                # interactive sheet
 ```
 
 ```
@@ -171,13 +171,15 @@ play
   c              conditions overlay (shows what each one does)
   i              inspiration
   o              correct ability scores by hand
+  L              load a character by URL
   u / U          spend / restore one limited use
   r              rest — short or long
                  short opens a screen: space spends one hit die at a time
   s / f          death save success / failure  (only while dying)
 
 dice
-  enter          roll the selected row       (on the ROLL tab)
+  enter          roll the selected row       (any row that rolls)
+  D              roll the selected attack's damage
   a / z          roll it with advantage / disadvantage
   x              free-form dice: 2d6+3, 1d20-1, 4d6
   l              roll log
@@ -281,6 +283,44 @@ What it deliberately does **not** decide: whether you can see the source of
 your fear, whether the attacker is within five feet, whether a check relies on
 sight. Those surface as a note in the conditions overlay so you make the
 ruling, rather than the app pretending to.
+
+## Attacks
+
+Equipped weapons become rollable attacks at the top of the ACTIONS tab, and
+none of it is parsed out of prose. The payload carries the damage dice, the
+damage type, the range and the weapon properties as structured fields, and a
+feature like Sneak Attack carries dice **already scaled to your level** — the
+`{{scalevalue}}` in its description is resolved in the `dice` field.
+
+`↵` rolls to hit, `D` rolls damage. The attack roll goes through the rules
+engine like any other d20 test, so being Poisoned gives it Disadvantage without
+being told; damage does not, because conditions and exhaustion modify d20 tests
+and a damage roll is not one.
+
+Finesse takes the better of Strength and Dexterity, every time — "your choice"
+means the better one. Correcting an ability score moves every attack with it,
+which is the reason attacks derive from the sheet rather than from the payload.
+
+**`↵` does the obvious thing for the row, not the tab.** A row that rolls,
+rolls; anything else opens. Sneak Attack has no attack roll of its own, so
+enter opens it and `D` still rolls its 4d6. `v` opens any row.
+
+## Loading a character
+
+`L` opens a load screen: paste a URL or an id, press enter. Every shape works —
+a share link with its trailing token, a plain character URL, or the bare number.
+
+The fetch blocks for a second or two, so the keymap only validates and hands the
+id to the event loop, which fetches *after* the frame saying "fetching…" has
+been painted. A URL is text while you are typing it: no digit jumps a tab and
+no letter fires a command.
+
+Running `vellum` with nothing cached opens this screen rather than printing
+usage at someone who just wants their sheet, and escape will not strand you
+there with an empty sheet and no way back.
+
+The command line and the load screen share one loader, so the two paths cannot
+drift into caching different things.
 
 ## Rests and hit dice
 
@@ -422,7 +462,7 @@ aesthetic, not a defect.
 
 ## Testing
 
-192 tests, and the interaction model is the point of the architecture: `app/state.rs`
+207 tests, and the interaction model is the point of the architecture: `app/state.rs`
 and `app/keys.rs` depend on neither ratatui nor a terminal, so every key a player
 can press is exercised headlessly — selection memory across tabs, filter scoping,
 the escape ladder, clamping when a filter shrinks the list under the cursor.
@@ -494,6 +534,8 @@ truecolor ANSI instead.
       unarmored defense, spell DC, massive damage
 - [x] **Hit dice and rests** — per-pool tracking, an interactive short rest,
       a long rest that restores the whole pool
+- [x] **Attacks** — weapon attacks and damage from structured payload data
+- [x] **Load by URL** — paste a character link into the app
 - [ ] **Phase 3** — session layer: HP, conditions, death saves, local overrides
 The snapshot is immutable and session state lives in a separate file, so
 re-importing after a level-up never clobbers HP you are tracking mid-combat.

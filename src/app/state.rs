@@ -9,6 +9,7 @@ use crate::rules;
 use crate::dice::{self, Advantage, Expr, Rng, Roll};
 use crate::ddb::Character;
 use crate::derive::{tables::Ability, Sheet};
+use crate::portrait::Portrait;
 use crate::session::{Session, CONDITIONS};
 use std::path::PathBuf;
 
@@ -30,6 +31,8 @@ pub enum Mode {
     Dice,
     /// The roll log, full-screen.
     RollLog,
+    /// Typing a character sheet URL to load.
+    Load,
     /// Correcting ability scores by hand.
     Abilities,
     /// Mid short rest, spending Hit Point Dice one at a time.
@@ -70,7 +73,7 @@ pub struct App {
 
     // -- play state --------------------------------------------------------
     pub session: Session,
-    session_path: PathBuf,
+    pub session_path: PathBuf,
     /// Digits typed so far in `Mode::Number`.
     pub number_buffer: String,
     /// Cursor in the conditions overlay. Index `CONDITIONS.len()` is the
@@ -95,13 +98,36 @@ pub struct App {
     /// Why the last roll came out the way it did — conditions, exhaustion,
     /// cancellation. Shown so a roll never silently changes itself.
     pub last_resolution: Vec<String>,
+
+    // -- loading a character -----------------------------------------------
+    /// The portrait lives here so swapping characters replaces it too.
+    pub portrait: Option<Portrait>,
+    pub load_buffer: String,
+    pub load_status: LoadStatus,
+    /// Set by the keymap, acted on by the event loop after it has drawn a
+    /// "fetching" frame — otherwise the UI freezes with no explanation while
+    /// the network call blocks.
+    pub pending_load: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LoadStatus {
+    Idle,
+    Fetching,
+    Failed(String),
 }
 
 /// How many rolls the log keeps.
 pub const ROLL_LOG_CAP: usize = 40;
 
 impl App {
-    pub fn new(sheet: Sheet, character: Character, session: Session, session_path: PathBuf) -> App {
+    pub fn new(
+        sheet: Sheet,
+        character: Character,
+        session: Session,
+        session_path: PathBuf,
+        portrait: Option<Portrait>,
+    ) -> App {
         App {
             sheet,
             character,
@@ -125,7 +151,77 @@ impl App {
             hit_die_cursor: 0,
             rest_healed: 0,
             last_resolution: Vec::new(),
+            portrait,
+            load_buffer: String::new(),
+            load_status: LoadStatus::Idle,
+            pending_load: None,
         }
+    }
+
+    // -- loading a character -----------------------------------------------
+
+    pub fn open_load(&mut self) {
+        self.load_buffer.clear();
+        self.load_status = LoadStatus::Idle;
+        self.mode = Mode::Load;
+    }
+
+    pub fn push_load(&mut self, c: char) {
+        if self.load_buffer.len() < 200 {
+            self.load_buffer.push(c);
+            self.load_status = LoadStatus::Idle;
+        }
+    }
+
+    pub fn pop_load(&mut self) {
+        self.load_buffer.pop();
+        self.load_status = LoadStatus::Idle;
+    }
+
+    /// Validate here and hand the id to the event loop, which owns the network.
+    /// A bad URL should say so instantly rather than after a round trip.
+    pub fn submit_load(&mut self) {
+        match crate::ddb::fetch::parse_character_id(&self.load_buffer) {
+            Ok(id) => {
+                self.load_status = LoadStatus::Fetching;
+                self.pending_load = Some(id);
+            }
+            Err(e) => self.load_status = LoadStatus::Failed(format!("{e}")),
+        }
+    }
+
+    /// Replace everything: character, sheet, session, portrait. The old
+    /// session file is left alone — switching characters is not deleting one.
+    pub fn adopt(
+        &mut self,
+        character: Character,
+        session: Session,
+        session_path: PathBuf,
+        portrait: Option<Portrait>,
+    ) {
+        self.sheet = crate::derive::derive_with(&character, &session.ability_overrides);
+        self.character = character;
+        self.session = session;
+        self.session_path = session_path;
+        self.portrait = portrait;
+        self.tab = Tab::Vitals;
+        self.selected = [0; Tab::ALL.len()];
+        self.filter.clear();
+        self.rolls.clear();
+        self.last_resolution.clear();
+        self.load_buffer.clear();
+        self.load_status = LoadStatus::Idle;
+        self.mode = Mode::List;
+    }
+
+    pub fn load_failed(&mut self, message: String) {
+        self.load_status = LoadStatus::Failed(message);
+        self.mode = Mode::Load;
+    }
+
+    /// True when there is nothing to show yet — a first run.
+    pub fn is_empty(&self) -> bool {
+        self.character.name.is_empty()
     }
 
     /// Deterministic dice, for tests.
@@ -153,14 +249,12 @@ impl App {
     /// and pressing `a` correctly produces a straight roll, which is exactly
     /// the case people get wrong at a table.
     pub fn roll_selected(&mut self, advantage: Advantage) {
-        if self.tab != Tab::Roll {
-            return;
-        }
         let Some(row) = self.selected_row() else { return };
         let Some(spec) = row.roll else { return };
 
         let kind = match spec.kind {
             RollKind::Initiative => rules::TestKind::Initiative,
+            RollKind::Attack => rules::TestKind::Attack,
             RollKind::DeathSave => rules::TestKind::DeathSave,
             RollKind::Save => rules::TestKind::Save {
                 ability: spec.ability.unwrap_or(Ability::Dex),
@@ -201,6 +295,32 @@ impl App {
         }
 
         self.record(result);
+    }
+
+    /// Roll the damage of the selected attack. Conditions and exhaustion do
+    /// not touch damage — they modify d20 tests, and this is not one.
+    pub fn roll_damage(&mut self) {
+        let Some(row) = self.selected_row() else { return };
+        let Some(d) = row.damage else { return };
+        let expr = Expr { count: d.count.max(1), sides: d.sides.max(2), modifier: d.modifier };
+        let label = if d.damage_type.is_empty() {
+            format!("{} damage", row.name)
+        } else {
+            format!("{} {}", row.name, d.damage_type.to_lowercase())
+        };
+        let r = dice::roll(&mut self.rng, &label, expr, Advantage::Normal);
+        self.last_resolution.clear();
+        self.record(r);
+    }
+
+    /// Whether the cursor is on something that rolls, so the footer and the
+    /// enter key can do the obvious thing for this row rather than this tab.
+    pub fn selected_is_rollable(&self) -> bool {
+        self.selected_row().is_some_and(|r| r.roll.is_some())
+    }
+
+    pub fn selected_has_damage(&self) -> bool {
+        self.selected_row().is_some_and(|r| r.damage.is_some())
     }
 
     pub fn start_dice(&mut self) {
@@ -633,6 +753,15 @@ impl App {
             }
             Mode::Conditions | Mode::Rest | Mode::RollLog | Mode::Abilities => {
                 self.mode = Mode::List
+            }
+            // Escaping the load screen on a first run would leave an empty
+            // sheet with no way back, so it stays put until something loads.
+            Mode::Load => {
+                if !self.is_empty() {
+                    self.load_buffer.clear();
+                    self.load_status = LoadStatus::Idle;
+                    self.mode = Mode::List;
+                }
             }
             Mode::ShortRest => self.finish_short_rest(),
             Mode::Dice => {

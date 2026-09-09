@@ -4,7 +4,6 @@
 use super::state::{App, Mode};
 use super::theme;
 use crate::content::Tab;
-use crate::portrait::Portrait;
 use crate::session::CONDITIONS;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::Style;
@@ -12,7 +11,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, List, ListItem, ListState, Paragraph, Wrap};
 use ratatui::Frame;
 
-pub fn draw(f: &mut Frame, app: &mut App, portrait: Option<&Portrait>) {
+pub fn draw(f: &mut Frame, app: &mut App) {
     let area = f.area();
     f.render_widget(Block::default().style(theme::base()), area);
 
@@ -42,13 +41,14 @@ pub fn draw(f: &mut Frame, app: &mut App, portrait: Option<&Portrait>) {
 
     match app.mode {
         Mode::RollLog => draw_roll_log(f, app, body),
+        Mode::Load => draw_load(f, app, body),
         Mode::ShortRest => draw_short_rest(f, app, body),
         Mode::Abilities => draw_abilities(f, app, body),
         Mode::Conditions => draw_conditions(f, app, body),
         Mode::Rest => draw_rest(f, app, body),
         Mode::Detail => draw_detail(f, app, body),
         _ => match app.tab {
-            Tab::Vitals => draw_vitals(f, app, body, portrait),
+            Tab::Vitals => draw_vitals(f, app, body),
             Tab::Skills => draw_skills(f, app, body),
             _ => draw_list(f, app, body),
         },
@@ -275,7 +275,7 @@ fn draw_detail(f: &mut Frame, app: &mut App, area: Rect) {
     );
 }
 
-fn draw_vitals(f: &mut Frame, app: &App, area: Rect, portrait: Option<&Portrait>) {
+fn draw_vitals(f: &mut Frame, app: &App, area: Rect) {
     let s = &app.sheet;
     let block = content_block();
     let inner = block.inner(area);
@@ -294,7 +294,7 @@ fn draw_vitals(f: &mut Frame, app: &App, area: Rect, portrait: Option<&Portrait>
     // -- portrait ----------------------------------------------------------
     // 24 cells wide by 12 tall renders square: each cell holds a 2x2 subgrid
     // and a subcell is about twice as tall as it is wide, so cols == rows * 2.
-    let art: Vec<Line> = match portrait {
+    let art: Vec<Line> = match app.portrait.as_ref() {
         Some(p) => p
             .to_cells(1.6)
             .into_iter()
@@ -466,6 +466,11 @@ fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
             None => format!("roll: {}_   ↵ roll   esc cancel", app.dice_buffer),
         },
         Mode::RollLog => "esc close".to_string(),
+        Mode::Load => match &app.load_status {
+            crate::app::state::LoadStatus::Fetching => "fetching…".to_string(),
+            crate::app::state::LoadStatus::Failed(e) => e.to_string(),
+            crate::app::state::LoadStatus::Idle => "↵ load   esc cancel".to_string(),
+        },
         Mode::ShortRest => "space spend a die   j/k pool   esc / ↵ finish".to_string(),
         Mode::Abilities => {
             "j/k pick   +/- adjust   0 clear override   esc close".to_string()
@@ -476,7 +481,10 @@ fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
         Mode::List if app.is_dying() => {
             "s success   f fail   h heal   c conditions   esc".to_string()
         }
-        Mode::List if app.tab == Tab::Roll => {
+        Mode::List if app.selected_has_damage() => {
+            "↵ attack   D damage   a adv   z dis   v detail   / find".to_string()
+        }
+        Mode::List if app.selected_is_rollable() => {
             "↵ roll   a adv   z dis   / find   x dice   l log".to_string()
         }
         Mode::List if app.is_list_tab() => {
@@ -705,6 +713,58 @@ fn draw_abilities(f: &mut Frame, app: &App, area: Rect) {
         "initiative all follow.",
         theme::dim(),
     ));
+
+    f.render_widget(Paragraph::new(lines), inner);
+}
+
+fn draw_load(f: &mut Frame, app: &App, area: Rect) {
+    use crate::app::state::LoadStatus;
+    let block = content_block().title(Span::styled(" LOAD A CHARACTER ", theme::bright()));
+    let inner = block.inner(area);
+    f.render_widget(Clear, area);
+    f.render_widget(block, area);
+
+    let mut lines = vec![
+        Line::from(""),
+        Line::styled("  Paste a D&D Beyond character URL or id.", theme::base()),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  > ", theme::dim()),
+            Span::styled(app.load_buffer.clone(), theme::bright()),
+            Span::styled(
+                if app.load_status == LoadStatus::Fetching { "" } else { "_" },
+                theme::bright(),
+            ),
+        ]),
+        Line::from(""),
+    ];
+
+    match &app.load_status {
+        LoadStatus::Fetching => {
+            lines.push(Line::styled("  fetching…", theme::bright()));
+        }
+        LoadStatus::Failed(e) => {
+            lines.push(Line::styled(format!("  {e}"), theme::danger()));
+        }
+        LoadStatus::Idle => {
+            lines.push(Line::styled(
+                "  https://www.dndbeyond.com/characters/147474826",
+                theme::dim(),
+            ));
+            lines.push(Line::styled("  147474826", theme::dim()));
+        }
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::styled(
+        "  The character's privacy must be set to Public on",
+        theme::dim(),
+    ));
+    lines.push(Line::styled(
+        "  dndbeyond.com. Nothing else is needed — no login,",
+        theme::dim(),
+    ));
+    lines.push(Line::styled("  no token, one request.", theme::dim()));
 
     f.render_widget(Paragraph::new(lines), inner);
 }
