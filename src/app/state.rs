@@ -32,6 +32,8 @@ pub enum Mode {
     RollLog,
     /// Correcting ability scores by hand.
     Abilities,
+    /// Mid short rest, spending Hit Point Dice one at a time.
+    ShortRest,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -86,6 +88,10 @@ pub struct App {
     pub dice_error: Option<String>,
     /// Cursor in the ability-override overlay.
     pub ability_cursor: usize,
+    /// Which hit dice pool the short-rest screen is spending from.
+    pub hit_die_cursor: usize,
+    /// Hit points regained so far this short rest.
+    pub rest_healed: i32,
     /// Why the last roll came out the way it did — conditions, exhaustion,
     /// cancellation. Shown so a roll never silently changes itself.
     pub last_resolution: Vec<String>,
@@ -116,6 +122,8 @@ impl App {
             dice_buffer: String::new(),
             dice_error: None,
             ability_cursor: 0,
+            hit_die_cursor: 0,
+            rest_healed: 0,
             last_resolution: Vec::new(),
         }
     }
@@ -432,14 +440,83 @@ impl App {
         self.persist();
     }
 
+    /// "To start a Short Rest, you must have at least 1 Hit Point." The same
+    /// gate applies to a Long Rest.
+    pub fn can_rest(&self) -> bool {
+        rules::can_rest(self.current_hp())
+    }
+
     pub fn rest(&mut self, long: bool) {
+        if !self.can_rest() {
+            self.last_error = Some("you need at least 1 hit point to rest".into());
+            self.mode = Mode::List;
+            return;
+        }
         if long {
             self.session.long_rest();
+            self.mode = Mode::List;
         } else {
+            // A short rest is not instantaneous bookkeeping: you spend dice one
+            // at a time and decide after each roll, so it gets its own screen.
             self.session.short_rest();
+            self.hit_die_cursor = 0;
+            self.rest_healed = 0;
+            self.mode = Mode::ShortRest;
         }
-        self.mode = Mode::List;
+        self.last_error = None;
         self.persist();
+    }
+
+    // -- hit dice ----------------------------------------------------------
+
+    pub fn hit_dice(&self) -> Vec<(String, u32, u32)> {
+        self.sheet
+            .hit_dice
+            .iter()
+            .map(|p| {
+                let label = p.label();
+                let total = p.total.max(0) as u32;
+                (label.clone(), self.session.hit_dice_left(&label, total), total)
+            })
+            .collect()
+    }
+
+    pub fn move_hit_die_cursor(&mut self, delta: isize) {
+        let n = self.sheet.hit_dice.len() as isize;
+        if n == 0 {
+            return;
+        }
+        self.hit_die_cursor = ((self.hit_die_cursor as isize + delta).rem_euclid(n)) as usize;
+    }
+
+    /// Spend one die: roll it, add Constitution, heal at least 1.
+    pub fn spend_hit_die(&mut self) {
+        let Some(pool) = self.sheet.hit_dice.get(self.hit_die_cursor).cloned() else {
+            return;
+        };
+        let label = pool.label();
+        let total = pool.total.max(0) as u32;
+        if !self.session.spend_hit_die(&label, total) {
+            return;
+        }
+
+        let con = self.sheet.modifier(Ability::Con);
+        let expr = Expr { count: 1, sides: pool.die.max(2) as u32, modifier: con };
+        // The breakdown already names the die, so the label must not repeat it.
+        let r = dice::roll(&mut self.rng, "Hit die", expr, Advantage::Normal);
+        // The healing floors at 1; the logged roll keeps its real total so the
+        // log does not quietly disagree with the dice.
+        let healed = rules::hit_die_healing(r.kept, con);
+        self.record(r);
+
+        self.session.heal(healed, self.max_hp());
+        self.rest_healed += healed;
+        self.persist();
+    }
+
+    pub fn finish_short_rest(&mut self) {
+        self.rest_healed = 0;
+        self.mode = Mode::List;
     }
 
     /// Rows for the current tab with the filter applied.
@@ -557,6 +634,7 @@ impl App {
             Mode::Conditions | Mode::Rest | Mode::RollLog | Mode::Abilities => {
                 self.mode = Mode::List
             }
+            Mode::ShortRest => self.finish_short_rest(),
             Mode::Dice => {
                 self.dice_buffer.clear();
                 self.dice_error = None;

@@ -301,3 +301,21 @@ fn several_disadvantages_and_one_advantage_still_cancel() {
     );
     assert_eq!(r.advantage, Advantage::Normal);
 }
+
+#[test]
+fn a_hit_die_always_heals_at_least_one() {
+    // "You regain Hit Points equal to the total (minimum of 1 Hit Point)."
+    // A 1 on a d8 with a -2 Constitution modifier still heals you.
+    assert_eq!(hit_die_healing(1, -2), 1);
+    assert_eq!(hit_die_healing(1, -5), 1);
+    assert_eq!(hit_die_healing(5, 1), 6);
+    assert_eq!(hit_die_healing(8, 3), 11);
+}
+
+#[test]
+fn resting_requires_at_least_one_hit_point() {
+    // "To start a Short Rest, you must have at least 1 Hit Point."
+    assert!(!can_rest(0));
+    assert!(can_rest(1));
+    assert!(can_rest(55));
+}

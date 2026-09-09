@@ -64,6 +64,11 @@ pub struct Session {
     #[serde(default)]
     pub ability_overrides: BTreeMap<String, i32>,
 
+    /// Hit Point Dice spent, keyed by die size ("d8"). A multiclass character
+    /// keeps its pools apart.
+    #[serde(default)]
+    pub hit_dice_used: BTreeMap<String, u32>,
+
     /// Expended limited uses, keyed `"<kind>:<id>"`.
     ///
     /// The recharge type is stored alongside the count rather than looked up
@@ -85,6 +90,15 @@ pub struct UseEntry {
 impl Session {
     /// A fresh session seeded from whatever the snapshot last recorded, so the
     /// first launch agrees with the website instead of starting at full HP.
+    /// Seeds hit dice from what D&D Beyond last recorded, keyed by die size.
+    pub fn seed_hit_dice(&mut self, pools: &[(String, u32)]) {
+        for (die, used) in pools {
+            if *used > 0 {
+                self.hit_dice_used.insert(die.clone(), *used);
+            }
+        }
+    }
+
     pub fn seed(character_id: i64, removed_hp: i32, temp_hp: i32, inspiration: bool) -> Session {
         Session {
             version: 1,
@@ -97,6 +111,7 @@ impl Session {
             death_failures: 0,
             inspiration,
             ability_overrides: BTreeMap::new(),
+            hit_dice_used: BTreeMap::new(),
             uses: BTreeMap::new(),
         }
     }
@@ -256,6 +271,24 @@ impl Session {
         self.ability_overrides.remove(abbrev);
     }
 
+    // -- hit dice ----------------------------------------------------------
+
+    pub fn hit_dice_used(&self, die: &str) -> u32 {
+        self.hit_dice_used.get(die).copied().unwrap_or(0)
+    }
+
+    pub fn hit_dice_left(&self, die: &str, total: u32) -> u32 {
+        total.saturating_sub(self.hit_dice_used(die))
+    }
+
+    pub fn spend_hit_die(&mut self, die: &str, total: u32) -> bool {
+        if self.hit_dice_left(die, total) == 0 {
+            return false;
+        }
+        *self.hit_dice_used.entry(die.to_string()).or_insert(0) += 1;
+        true
+    }
+
     // -- limited uses ------------------------------------------------------
 
     pub fn uses_of(&self, key: &str) -> u32 {
@@ -290,8 +323,8 @@ impl Session {
         }
     }
 
-    /// A short rest restores only what recharges on one. Hit dice are spent
-    /// deliberately and are not tracked yet, so this is the whole of it.
+    /// A short rest restores only what recharges on one. Hit Point Dice are
+    /// spent deliberately during the rest, not restored by it.
     pub fn short_rest(&mut self) {
         self.uses.retain(|_, e| e.reset != "short rest");
     }
@@ -307,6 +340,10 @@ impl Session {
         // Everything recharges. A long rest spans dawn in all but contrived
         // cases, and anything it should not have restored can be re-spent.
         self.uses.clear();
+        // "You regain all lost Hit Points and all spent Hit Point Dice."
+        // The 2024 rules restore the whole pool; the 2014 rules restored half,
+        // which is the version most people remember.
+        self.hit_dice_used.clear();
     }
 
     /// How many limited-use things are currently expended — for a header chip

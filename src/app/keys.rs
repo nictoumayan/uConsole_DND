@@ -60,6 +60,16 @@ pub fn handle(app: &mut App, code: KeyCode, mods: KeyModifiers) {
             _ => {}
         },
 
+        Mode::ShortRest => match code {
+            KeyCode::Esc | KeyCode::Char('q') | KeyCode::Enter => app.escape(),
+            KeyCode::Char('j') | KeyCode::Down => app.move_hit_die_cursor(1),
+            KeyCode::Char('k') | KeyCode::Up => app.move_hit_die_cursor(-1),
+            // One die per press: "you can decide to spend an additional Hit
+            // Point Die after each roll".
+            KeyCode::Char(' ') | KeyCode::Char('s') => app.spend_hit_die(),
+            _ => {}
+        },
+
         Mode::Rest => match code {
             KeyCode::Char('s') => app.rest(false),
             KeyCode::Char('l') => app.rest(true),

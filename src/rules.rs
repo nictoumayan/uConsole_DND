@@ -363,6 +363,22 @@ pub fn is_massive_damage(damage: i32, current_hp: i32, max_hp: i32) -> bool {
     current_hp > 0 && remainder >= max_hp
 }
 
+/// "For each Hit Point Die you spend in this way, roll the die and add your
+/// Constitution modifier to it. You regain Hit Points equal to the total
+/// (minimum of 1 Hit Point)."
+///
+/// The minimum is the part worth encoding: a d8 rolled as a 1 with a -2
+/// Constitution modifier still heals you, rather than healing -1.
+pub fn hit_die_healing(roll: u32, con_modifier: i32) -> i32 {
+    (roll as i32 + con_modifier).max(1)
+}
+
+/// "To start a Short Rest, you must have at least 1 Hit Point." The same
+/// condition gates a Long Rest.
+pub fn can_rest(current_hp: i32) -> bool {
+    current_hp >= 1
+}
+
 /// Carrying capacity is Strength score times 15.
 pub fn carrying_capacity(strength: i32) -> i32 {
     strength * 15

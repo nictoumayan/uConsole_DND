@@ -126,6 +126,9 @@ pub struct TraitDefinition {
 pub struct Class {
     #[serde(deserialize_with = "nullable")]
     pub level: i32,
+    /// What D&D Beyond last recorded. Seeds a fresh session only.
+    #[serde(deserialize_with = "nullable")]
+    pub hit_dice_used: i32,
     pub definition: NamedDefinition,
     pub subclass_definition: Option<NamedDefinition>,
 }
@@ -135,6 +138,9 @@ pub struct Class {
 pub struct NamedDefinition {
     #[serde(deserialize_with = "nullable")]
     pub name: String,
+    /// The die size: 8 means d8. Zero on definitions that are not classes.
+    #[serde(deserialize_with = "nullable")]
+    pub hit_dice: i32,
     /// 1=STR .. 6=CHA. Absent on classes that do not cast.
     pub spell_casting_ability_id: Option<i32>,
     /// Present on a class definition: every feature the class ever gets, at

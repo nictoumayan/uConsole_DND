@@ -229,3 +229,13 @@ fn proficiencies_are_split_by_kind_and_exclude_skills_and_saves() {
     }
     assert!(all.iter().all(|s| !s.contains('-')), "slugs should be title-cased: {all:?}");
 }
+
+#[test]
+fn hit_dice_come_from_class_level_and_die_size() {
+    let ch: Character = serde_json::from_str(include_str!("fixtures/srd_rogue.json")).unwrap();
+    let s = derive(&ch);
+    assert_eq!(s.hit_dice.len(), 1, "one pool for a single-class character");
+    assert_eq!(s.hit_dice[0].die, 8, "a Rogue's Hit Point Die is a d8");
+    assert_eq!(s.hit_dice[0].total, 8, "one die per class level");
+    assert_eq!(s.hit_dice[0].label(), "d8");
+}

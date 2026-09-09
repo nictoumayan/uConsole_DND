@@ -86,6 +86,22 @@ pub struct Sheet {
     /// Languages, tools, armour and weapons. All present in the payload as
     /// modifiers and, until now, displayed nowhere.
     pub proficiencies: Proficiencies,
+    /// One pool per die size, so a multiclass character keeps its 5d8 and its
+    /// 3d10 apart rather than averaging them into nonsense.
+    pub hit_dice: Vec<HitDicePool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HitDicePool {
+    /// 8 means d8.
+    pub die: i32,
+    pub total: i32,
+}
+
+impl HitDicePool {
+    pub fn label(&self) -> String {
+        format!("d{}", self.die)
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -229,7 +245,25 @@ pub fn derive_with(ch: &Character, overrides: &AbilityOverrides) -> Sheet {
         spellcasting: derive_spellcasting(ch, pb, &scores),
         carrying_capacity: crate::rules::carrying_capacity(scores[Ability::Str.index()].score),
         proficiencies: derive_proficiencies(ch),
+        hit_dice: derive_hit_dice(ch),
     }
+}
+
+/// A character has one Hit Point Die per class level, of that class's size.
+fn derive_hit_dice(ch: &Character) -> Vec<HitDicePool> {
+    let mut pools: Vec<HitDicePool> = Vec::new();
+    for c in &ch.classes {
+        let die = c.definition.hit_dice;
+        if die <= 0 || c.level <= 0 {
+            continue;
+        }
+        match pools.iter_mut().find(|p| p.die == die) {
+            Some(p) => p.total += c.level,
+            None => pools.push(HitDicePool { die, total: c.level }),
+        }
+    }
+    pools.sort_by_key(|p| p.die);
+    pools
 }
 
 fn derive_proficiencies(ch: &Character) -> Proficiencies {

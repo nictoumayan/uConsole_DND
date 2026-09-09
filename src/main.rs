@@ -224,13 +224,24 @@ fn cmd_tui(id_arg: Option<&str>) -> Result<()> {
     let session_path = paths::session_path(id)?;
     // Seeded from whatever the snapshot last recorded, so a first launch
     // agrees with the website rather than starting you at full health.
-    let session = Session::load_or_seed(
+    let mut session = Session::load_or_seed(
         &session_path,
         id,
         ch.removed_hit_points,
         ch.temporary_hit_points,
         ch.inspiration,
     );
+    // Seed spent hit dice from the website on a first launch, the same way
+    // hit points are seeded.
+    if session.hit_dice_used.is_empty() {
+        let pools: Vec<(String, u32)> = ch
+            .classes
+            .iter()
+            .filter(|c| c.definition.hit_dice > 0 && c.hit_dice_used > 0)
+            .map(|c| (format!("d{}", c.definition.hit_dice), c.hit_dice_used as u32))
+            .collect();
+        session.seed_hit_dice(&pools);
+    }
 
     // Derive with the player's corrections applied, not without them.
     let sheet = derive::derive_with(&ch, &session.ability_overrides);

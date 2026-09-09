@@ -691,8 +691,10 @@ fn a_short_rest_restores_short_rest_uses_only() {
 
     press(&mut a, KeyCode::Char('r'));
     press(&mut a, KeyCode::Char('s')); // short rest
+    assert_eq!(a.mode, Mode::ShortRest, "a short rest opens the hit dice screen");
     assert_eq!(a.session.uses_of("action:501"), 0, "short-rest use not restored");
     assert_eq!(a.session.uses_of("spell:601"), 1, "long-rest use wrongly restored");
+    press(&mut a, KeyCode::Esc); // leave the rest screen
 
     press(&mut a, KeyCode::Char('r'));
     press(&mut a, KeyCode::Char('l')); // long rest
@@ -771,4 +773,97 @@ fn the_ability_cursor_wraps() {
     assert_eq!(a.ability_cursor, 5, "up from the first should wrap to the last");
     press(&mut a, KeyCode::Char('j'));
     assert_eq!(a.ability_cursor, 0);
+}
+
+// -- hit dice and rests ----------------------------------------------------
+
+#[test]
+fn a_short_rest_opens_a_screen_for_spending_dice_one_at_a_time() {
+    // "You can decide to spend an additional Hit Point Die after each roll",
+    // so this is a screen you sit in, not a single keystroke.
+    let mut a = seeded();
+    press(&mut a, KeyCode::Char('d'));
+    typed(&mut a, "30");
+    press(&mut a, KeyCode::Enter);
+    let hurt = a.current_hp();
+
+    press(&mut a, KeyCode::Char('r'));
+    press(&mut a, KeyCode::Char('s'));
+    assert_eq!(a.mode, Mode::ShortRest);
+    assert_eq!(a.hit_dice(), vec![("d8".to_string(), 8, 8)]);
+
+    press(&mut a, KeyCode::Char(' '));
+    assert_eq!(a.hit_dice()[0].1, 7, "a die should have been spent");
+    assert!(a.current_hp() > hurt, "spending a die should heal you");
+    assert!(a.rest_healed > 0);
+
+    press(&mut a, KeyCode::Esc);
+    assert_eq!(a.mode, Mode::List);
+    assert_eq!(a.rest_healed, 0, "the running total resets when the rest ends");
+}
+
+#[test]
+fn a_hit_die_roll_lands_in_the_roll_log() {
+    let mut a = seeded();
+    press(&mut a, KeyCode::Char('d'));
+    typed(&mut a, "30");
+    press(&mut a, KeyCode::Enter);
+    press(&mut a, KeyCode::Char('r'));
+    press(&mut a, KeyCode::Char('s'));
+    press(&mut a, KeyCode::Char(' '));
+
+    let r = a.last_roll().expect("a roll");
+    assert_eq!(r.label, "Hit die");
+    assert_eq!(r.expr.sides, 8);
+    assert_eq!(r.expr.modifier, a.sheet.modifier(vellum::derive::tables::Ability::Con));
+}
+
+#[test]
+fn an_empty_hit_dice_pool_refuses_rather_than_healing_for_free() {
+    let mut a = seeded();
+    press(&mut a, KeyCode::Char('d'));
+    typed(&mut a, "40");
+    press(&mut a, KeyCode::Enter);
+    press(&mut a, KeyCode::Char('r'));
+    press(&mut a, KeyCode::Char('s'));
+    for _ in 0..8 {
+        press(&mut a, KeyCode::Char(' '));
+    }
+    assert_eq!(a.hit_dice()[0].1, 0);
+    let hp = a.current_hp();
+    let rolls = a.rolls.len();
+    press(&mut a, KeyCode::Char(' '));
+    assert_eq!(a.current_hp(), hp, "healed with no dice left");
+    assert_eq!(a.rolls.len(), rolls, "rolled a die that was not there");
+}
+
+#[test]
+fn a_long_rest_gives_every_hit_die_back() {
+    let mut a = seeded();
+    press(&mut a, KeyCode::Char('d'));
+    typed(&mut a, "30");
+    press(&mut a, KeyCode::Enter);
+    press(&mut a, KeyCode::Char('r'));
+    press(&mut a, KeyCode::Char('s'));
+    press(&mut a, KeyCode::Char(' '));
+    press(&mut a, KeyCode::Char(' '));
+    press(&mut a, KeyCode::Esc);
+    assert_eq!(a.hit_dice()[0].1, 6);
+
+    press(&mut a, KeyCode::Char('r'));
+    press(&mut a, KeyCode::Char('l'));
+    assert_eq!(a.hit_dice()[0].1, 8, "2024 long rests restore the whole pool");
+    assert_eq!(a.current_hp(), a.max_hp());
+}
+
+#[test]
+fn you_cannot_rest_at_zero_hit_points() {
+    // "To start a Short Rest, you must have at least 1 Hit Point."
+    let mut a = seeded();
+    drop_to_zero(&mut a);
+    press(&mut a, KeyCode::Char('r'));
+    press(&mut a, KeyCode::Char('l'));
+    assert_eq!(a.current_hp(), 0, "a long rest at 0 hp should be refused");
+    assert!(a.last_error.is_some(), "the refusal should be explained");
+    assert_eq!(a.mode, Mode::List);
 }

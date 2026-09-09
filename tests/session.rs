@@ -374,3 +374,63 @@ fn massive_damage_kills_outright() {
     u.take_damage(35 + MAX - 1, MAX); // remainder one short of max
     assert!(u.is_dying(MAX), "remainder below max should not kill outright");
 }
+
+// -- hit dice --------------------------------------------------------------
+
+#[test]
+fn spending_hit_dice_is_capped_by_the_pool() {
+    let mut s = fresh();
+    for _ in 0..3 {
+        assert!(s.spend_hit_die("d8", 3), "should be able to spend");
+    }
+    assert!(!s.spend_hit_die("d8", 3), "an empty pool must refuse");
+    assert_eq!(s.hit_dice_left("d8", 3), 0);
+    assert_eq!(s.hit_dice_used("d8"), 3);
+}
+
+#[test]
+fn multiclass_pools_are_tracked_separately() {
+    // A Rogue 5 / Fighter 3 has 5d8 and 3d10, not 8 of something averaged.
+    let mut s = fresh();
+    s.spend_hit_die("d8", 5);
+    s.spend_hit_die("d8", 5);
+    s.spend_hit_die("d10", 3);
+    assert_eq!(s.hit_dice_left("d8", 5), 3);
+    assert_eq!(s.hit_dice_left("d10", 3), 2);
+}
+
+#[test]
+fn a_short_rest_does_not_give_hit_dice_back() {
+    // They are spent during the rest, not restored by it.
+    let mut s = fresh();
+    s.spend_hit_die("d8", 8);
+    s.short_rest();
+    assert_eq!(s.hit_dice_used("d8"), 1);
+}
+
+#[test]
+fn a_long_rest_restores_all_hit_dice_not_half() {
+    // The 2024 rules say "you regain all lost Hit Points and all spent Hit
+    // Point Dice". The 2014 rules restored half, which is the version most
+    // people remember.
+    let mut s = fresh();
+    for _ in 0..8 {
+        s.spend_hit_die("d8", 8);
+    }
+    s.long_rest();
+    assert_eq!(s.hit_dice_used("d8"), 0);
+    assert_eq!(s.hit_dice_left("d8", 8), 8);
+}
+
+#[test]
+fn hit_dice_survive_a_round_trip() {
+    let dir = std::env::temp_dir().join(format!("vellum-hd-{}", std::process::id()));
+    let path = dir.join("s.json");
+    let mut s = fresh();
+    s.spend_hit_die("d8", 8);
+    s.spend_hit_die("d8", 8);
+    s.save(&path).expect("saves");
+    let back = Session::load_or_seed(&path, 1, 0, 0, false);
+    assert_eq!(back.hit_dice_used("d8"), 2);
+    let _ = std::fs::remove_dir_all(&dir);
+}

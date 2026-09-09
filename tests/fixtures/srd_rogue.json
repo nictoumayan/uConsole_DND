@@ -151,11 +151,13 @@
             "requiredLevel": 20,
             "displayOrder": 1
           }
-        ]
+        ],
+        "hitDice": 8
       },
       "subclassDefinition": {
         "name": "Assassin"
-      }
+      },
+      "hitDiceUsed": 0
     }
   ],
   "inventory": [

@@ -173,6 +173,7 @@ play
   o              correct ability scores by hand
   u / U          spend / restore one limited use
   r              rest — short or long
+                 short opens a screen: space spends one hit die at a time
   s / f          death save success / failure  (only while dying)
 
 dice
@@ -280,6 +281,26 @@ What it deliberately does **not** decide: whether you can see the source of
 your fear, whether the attacker is within five feet, whether a check relies on
 sight. Those surface as a note in the conditions overlay so you make the
 ruling, rather than the app pretending to.
+
+## Rests and hit dice
+
+One Hit Point Die per class level, of that class's size, tracked per die size so
+a multiclass character keeps its 5d8 and its 3d10 apart.
+
+A **short rest** is not one keystroke. The rules say "you can decide to spend an
+additional Hit Point Die after each roll", so it opens a screen: `space` spends
+one die, rolls it, adds Constitution, and heals — **minimum 1**, which matters
+for a character whose Constitution modifier is negative. The running total and
+the last roll stay on screen so you can decide whether to spend another. Short
+rest features recharge on entry.
+
+A **long rest** restores all hit points and **all** spent hit dice. That is a
+2024 change worth stating plainly: the 2014 rules gave back half, which is the
+version most people remember, and it is what this would have shipped with had
+the rule not been read from the source.
+
+Both rests require at least 1 hit point to start, and say so rather than
+silently doing nothing.
 
 ## Dice
 
@@ -401,7 +422,7 @@ aesthetic, not a defect.
 
 ## Testing
 
-179 tests, and the interaction model is the point of the architecture: `app/state.rs`
+192 tests, and the interaction model is the point of the architecture: `app/state.rs`
 and `app/keys.rs` depend on neither ratatui nor a terminal, so every key a player
 can press is exercised headlessly — selection memory across tabs, filter scoping,
 the escape ladder, clamping when a filter shrinks the list under the cursor.
@@ -471,6 +492,8 @@ truecolor ANSI instead.
       right kind of rest
 - [x] **Rules engine** — conditions, exhaustion, advantage resolution, speed,
       unarmored defense, spell DC, massive damage
+- [x] **Hit dice and rests** — per-pool tracking, an interactive short rest,
+      a long rest that restores the whole pool
 - [ ] **Phase 3** — session layer: HP, conditions, death saves, local overrides
 The snapshot is immutable and session state lives in a separate file, so
 re-importing after a level-up never clobbers HP you are tracking mid-combat.

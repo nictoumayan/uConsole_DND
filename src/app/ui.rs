@@ -42,9 +42,10 @@ pub fn draw(f: &mut Frame, app: &mut App, portrait: Option<&Portrait>) {
 
     match app.mode {
         Mode::RollLog => draw_roll_log(f, app, body),
+        Mode::ShortRest => draw_short_rest(f, app, body),
         Mode::Abilities => draw_abilities(f, app, body),
         Mode::Conditions => draw_conditions(f, app, body),
-        Mode::Rest => draw_rest(f, body),
+        Mode::Rest => draw_rest(f, app, body),
         Mode::Detail => draw_detail(f, app, body),
         _ => match app.tab {
             Tab::Vitals => draw_vitals(f, app, body, portrait),
@@ -365,6 +366,15 @@ fn draw_vitals(f: &mut Frame, app: &App, area: Rect, portrait: Option<&Portrait>
             Span::styled(format!("{range} ft"), theme::base()),
         ]));
     }
+    for (label, left, total) in app.hit_dice() {
+        col3.push(Line::from(vec![
+            Span::styled(format!("{:<11}", "Hit dice"), theme::dim()),
+            Span::styled(
+                format!("{left}/{total} {label}"),
+                if left == 0 { theme::danger() } else { theme::base() },
+            ),
+        ]));
+    }
     col3.push(Line::from(vec![
         Span::styled(format!("{:<11}", "Carry"), theme::dim()),
         Span::styled(format!("{} lb", s.carrying_capacity), theme::base()),
@@ -456,6 +466,7 @@ fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
             None => format!("roll: {}_   ↵ roll   esc cancel", app.dice_buffer),
         },
         Mode::RollLog => "esc close".to_string(),
+        Mode::ShortRest => "space spend a die   j/k pool   esc / ↵ finish".to_string(),
         Mode::Abilities => {
             "j/k pick   +/- adjust   0 clear override   esc close".to_string()
         }
@@ -698,7 +709,71 @@ fn draw_abilities(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(Paragraph::new(lines), inner);
 }
 
-fn draw_rest(f: &mut Frame, area: Rect) {
+fn draw_short_rest(f: &mut Frame, app: &App, area: Rect) {
+    let block = content_block().title(Span::styled(" SHORT REST ", theme::bright()));
+    let inner = block.inner(area);
+    f.render_widget(Clear, area);
+    f.render_widget(block, area);
+
+    let mut lines: Vec<Line> = vec![Line::from("")];
+    let dice = app.hit_dice();
+    if dice.is_empty() {
+        lines.push(Line::styled("  no hit dice on this character", theme::dim()));
+    }
+    for (i, (label, left, total)) in dice.iter().enumerate() {
+        let selected = i == app.hit_die_cursor;
+        let style = if selected {
+            theme::selection()
+        } else if *left == 0 {
+            theme::danger()
+        } else {
+            theme::base()
+        };
+        lines.push(Line::styled(
+            format!(
+                " {label:<5} {left} of {total}   {}{}",
+                "●".repeat(*left as usize),
+                "○".repeat(total.saturating_sub(*left) as usize)
+            ),
+            style,
+        ));
+    }
+
+    lines.push(Line::from(""));
+    let con = app.sheet.modifier(crate::derive::tables::Ability::Con);
+    lines.push(Line::styled(
+        format!("  each die heals its roll {con:+} CON, minimum 1"),
+        theme::dim(),
+    ));
+    if app.current_hp() >= app.max_hp() {
+        lines.push(Line::styled("  already at full hit points", theme::dim()));
+    }
+
+    if app.rest_healed > 0 {
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled("  regained ", theme::dim()),
+            Span::styled(format!("{} hit points", app.rest_healed), theme::bright()),
+            Span::styled(
+                format!("   now {}/{}", app.current_hp(), app.max_hp()),
+                theme::dim(),
+            ),
+        ]));
+    }
+    if let Some(r) = app.last_roll().filter(|r| r.label.starts_with("Hit die")) {
+        lines.push(Line::styled(format!("  {}", r.breakdown()), theme::dim()));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::styled(
+        "  short-rest features have already recharged",
+        theme::dim(),
+    ));
+
+    f.render_widget(Paragraph::new(lines), inner);
+}
+
+fn draw_rest(f: &mut Frame, app: &App, area: Rect) {
     let block = content_block().title(Span::styled(" REST ", theme::bright()));
     let inner = block.inner(area);
     f.render_widget(Clear, area);
@@ -708,21 +783,28 @@ fn draw_rest(f: &mut Frame, area: Rect) {
             Line::from(""),
             Line::styled("  s   short rest", theme::base()),
             Line::styled(
-                "      restores short-rest uses; hit dice are yours to spend",
+                "      recharges short-rest features, then spend hit dice",
                 theme::dim(),
             ),
             Line::from(""),
             Line::styled("  l   long rest", theme::base()),
             Line::styled(
-                "      full hit points, temp hp cleared, death saves cleared,",
+                "      full hit points and all hit dice back, temp hp and",
                 theme::dim(),
             ),
             Line::styled(
-                "      one level of exhaustion removed, all uses restored",
+                "      death saves cleared, one exhaustion level removed",
                 theme::dim(),
             ),
             Line::from(""),
-            Line::styled("  esc cancel", theme::dim()),
+            Line::styled(
+                if app.can_rest() {
+                    "  esc cancel".to_string()
+                } else {
+                    "  you need at least 1 hit point to rest".to_string()
+                },
+                if app.can_rest() { theme::dim() } else { theme::danger() },
+            ),
         ]),
         inner,
     );
