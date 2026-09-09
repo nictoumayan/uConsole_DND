@@ -26,6 +26,7 @@ pub fn handle(app: &mut App, code: KeyCode, mods: KeyModifiers) {
     // anyone remembering to cover it.
     let before = app.session.clone();
     app.undo_note = None;
+    app.notice = None;
     dispatch(app, code, mods);
     app.record_undo(before);
 }
@@ -154,6 +155,9 @@ fn dispatch(app: &mut App, code: KeyCode, _mods: KeyModifiers) {
             KeyCode::Char('l') => app.open_roll_log(),
             KeyCode::Char('o') => app.open_abilities(),
             KeyCode::Char('L') => app.open_load(),
+            // Cast the selected spell: spend the slot, take up concentration.
+            KeyCode::Char('C') => app.cast_selected(),
+            KeyCode::Char('X') => app.stop_concentrating(),
 
             // Play state. These work from any tab — mid-combat you should not
             // have to navigate somewhere before you can take damage.

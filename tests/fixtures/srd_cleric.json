@@ -1,0 +1,322 @@
+{
+  "id": 2,
+  "name": "Test Cleric",
+  "avatarUrl": "",
+  "baseHitPoints": 28,
+  "bonusHitPoints": null,
+  "overrideHitPoints": null,
+  "removedHitPoints": 0,
+  "temporaryHitPoints": 0,
+  "inspiration": false,
+  "stats": [
+    {
+      "id": 1,
+      "value": 13
+    },
+    {
+      "id": 2,
+      "value": 12
+    },
+    {
+      "id": 3,
+      "value": 14
+    },
+    {
+      "id": 4,
+      "value": 10
+    },
+    {
+      "id": 5,
+      "value": 17
+    },
+    {
+      "id": 6,
+      "value": 11
+    }
+  ],
+  "bonusStats": [
+    {
+      "id": 1,
+      "value": null
+    },
+    {
+      "id": 2,
+      "value": null
+    },
+    {
+      "id": 3,
+      "value": null
+    },
+    {
+      "id": 4,
+      "value": null
+    },
+    {
+      "id": 5,
+      "value": null
+    },
+    {
+      "id": 6,
+      "value": null
+    }
+  ],
+  "overrideStats": [
+    {
+      "id": 1,
+      "value": null
+    },
+    {
+      "id": 2,
+      "value": null
+    },
+    {
+      "id": 3,
+      "value": null
+    },
+    {
+      "id": 4,
+      "value": null
+    },
+    {
+      "id": 5,
+      "value": null
+    },
+    {
+      "id": 6,
+      "value": null
+    }
+  ],
+  "race": {
+    "fullName": "Human",
+    "baseRaceName": "Human",
+    "weightSpeeds": {
+      "normal": {
+        "walk": 30,
+        "fly": 0,
+        "swim": 0,
+        "climb": 0
+      }
+    },
+    "racialTraits": []
+  },
+  "classes": [
+    {
+      "level": 5,
+      "hitDiceUsed": 0,
+      "definition": {
+        "name": "Cleric",
+        "hitDice": 8,
+        "spellCastingAbilityId": 5,
+        "classFeatures": [
+          {
+            "name": "Channel Divinity",
+            "description": "<p>Divine energy.</p>",
+            "requiredLevel": 2,
+            "displayOrder": 1
+          }
+        ]
+      },
+      "subclassDefinition": {
+        "name": "Life Domain",
+        "hitDice": 0,
+        "classFeatures": []
+      }
+    }
+  ],
+  "inventory": [
+    {
+      "id": 800,
+      "quantity": 1,
+      "equipped": true,
+      "isAttuned": false,
+      "definition": {
+        "name": "Chain Shirt",
+        "armorClass": 13,
+        "type": "Medium Armor",
+        "filterType": "Armor",
+        "rarity": "Common",
+        "description": "",
+        "canAttune": false,
+        "properties": [],
+        "grantedModifiers": []
+      }
+    },
+    {
+      "id": 801,
+      "quantity": 1,
+      "equipped": true,
+      "isAttuned": false,
+      "definition": {
+        "name": "Mace",
+        "type": "Mace",
+        "filterType": "Weapon",
+        "rarity": "Common",
+        "description": "",
+        "canAttune": false,
+        "categoryId": 1,
+        "damage": {
+          "diceCount": 1,
+          "diceValue": 6,
+          "fixedValue": null
+        },
+        "damageType": "Bludgeoning",
+        "attackType": 1,
+        "range": 5,
+        "longRange": 0,
+        "properties": [],
+        "grantedModifiers": []
+      }
+    }
+  ],
+  "customItems": [],
+  "currencies": {
+    "cp": 0,
+    "sp": 0,
+    "gp": 10,
+    "ep": 0,
+    "pp": 0
+  },
+  "modifiers": {
+    "race": [],
+    "background": [],
+    "item": [],
+    "condition": [],
+    "feat": [],
+    "class": [
+      {
+        "type": "proficiency",
+        "subType": "wisdom-saving-throws",
+        "value": null,
+        "isGranted": true,
+        "restriction": ""
+      },
+      {
+        "type": "proficiency",
+        "subType": "charisma-saving-throws",
+        "value": null,
+        "isGranted": true,
+        "restriction": ""
+      },
+      {
+        "type": "proficiency",
+        "subType": "medium-armor",
+        "value": null,
+        "isGranted": true,
+        "restriction": ""
+      },
+      {
+        "type": "proficiency",
+        "subType": "simple-weapons",
+        "value": null,
+        "isGranted": true,
+        "restriction": ""
+      },
+      {
+        "type": "proficiency",
+        "subType": "religion",
+        "value": null,
+        "isGranted": false,
+        "restriction": ""
+      },
+      {
+        "type": "proficiency",
+        "subType": "insight",
+        "value": null,
+        "isGranted": false,
+        "restriction": ""
+      }
+    ]
+  },
+  "deathSaves": {
+    "failCount": null,
+    "successCount": null,
+    "isStabilized": false
+  },
+  "actions": {
+    "class": [],
+    "race": [],
+    "feat": []
+  },
+  "spells": {
+    "race": [],
+    "class": [],
+    "item": [],
+    "feat": []
+  },
+  "classSpells": [
+    {
+      "spells": [
+        {
+          "id": 900,
+          "limitedUse": null,
+          "prepared": true,
+          "alwaysPrepared": false,
+          "definition": {
+            "name": "Cure Wounds",
+            "level": 1,
+            "school": "Abjuration",
+            "description": "<p>A creature you touch regains hit points.</p>",
+            "snippet": "Heal a creature you touch.",
+            "concentration": false,
+            "ritual": false
+          }
+        },
+        {
+          "id": 901,
+          "limitedUse": null,
+          "prepared": true,
+          "alwaysPrepared": false,
+          "definition": {
+            "name": "Bless",
+            "level": 1,
+            "school": "Enchantment",
+            "description": "<p>You bless up to three creatures.</p>",
+            "snippet": "Bless up to three creatures.",
+            "concentration": true,
+            "ritual": false
+          }
+        },
+        {
+          "id": 902,
+          "limitedUse": null,
+          "prepared": true,
+          "alwaysPrepared": false,
+          "definition": {
+            "name": "Spiritual Weapon",
+            "level": 2,
+            "school": "Evocation",
+            "description": "<p>A floating spectral weapon.</p>",
+            "snippet": "A floating spectral weapon.",
+            "concentration": false,
+            "ritual": false
+          }
+        },
+        {
+          "id": 903,
+          "limitedUse": null,
+          "prepared": true,
+          "alwaysPrepared": false,
+          "definition": {
+            "name": "Sacred Flame",
+            "level": 0,
+            "school": "Evocation",
+            "description": "<p>Radiant flame.</p>",
+            "snippet": "Radiant flame.",
+            "concentration": false,
+            "ritual": false
+          }
+        }
+      ]
+    }
+  ],
+  "feats": [],
+  "background": {
+    "definition": {
+      "name": "Acolyte",
+      "description": "",
+      "shortDescription": "A temple servant."
+    }
+  },
+  "notes": {},
+  "traits": {}
+}

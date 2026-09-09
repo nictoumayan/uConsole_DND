@@ -131,6 +131,15 @@ pub struct Row {
     pub uses: Option<UseSpec>,
     /// Present on an attack: the damage expression to roll with `D`.
     pub damage: Option<DamageSpec>,
+    /// Present on a spell.
+    pub spell: Option<SpellSpec>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpellSpec {
+    /// 0 for a cantrip, which costs nothing to cast.
+    pub level: usize,
+    pub concentration: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -158,6 +167,7 @@ impl Row {
             roll: None,
             uses: None,
             damage: None,
+            spell: None,
         }
     }
 
@@ -178,6 +188,7 @@ impl Row {
             roll: Some(RollSpec { modifier, kind, ability, skill }),
             uses: None,
             damage: None,
+            spell: None,
         }
     }
 
@@ -354,11 +365,13 @@ fn spells(ch: &Character) -> Vec<Row> {
                 meta.push_str(" R");
             }
             let snippet = if d.snippet.is_empty() { &d.description } else { &d.snippet };
-            (
-                d.level,
-                Row::new(&d.name, meta, snippet, &d.description)
-                    .with_uses(UseSpec::from("spell", e.id, &e.limited_use)),
-            )
+            let mut row = Row::new(&d.name, meta, snippet, &d.description)
+                .with_uses(UseSpec::from("spell", e.id, &e.limited_use));
+            row.spell = Some(SpellSpec {
+                level: d.level.clamp(0, 9) as usize,
+                concentration: d.concentration,
+            });
+            (d.level, row)
         })
         .collect();
 

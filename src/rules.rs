@@ -439,3 +439,127 @@ pub fn passive_perception(
             Advantage::Normal => 0,
         }
 }
+
+// ---------------------------------------------------------------------------
+// Spellcasting
+// ---------------------------------------------------------------------------
+
+/// Spell slots by caster level, from the Multiclass Spellcaster table in
+/// SRD 5.2.1 — which is the same progression every full caster's own table
+/// shows. Indexed by level, so row 0 is padding.
+///
+/// This is the only slot table encoded. Half and third casters are derived
+/// from it, and `half_caster_slots_match_the_paladin_table` pins that
+/// derivation against the Paladin table's real numbers.
+pub const FULL_CASTER_SLOTS: [[u8; 9]; 21] = [
+    [0, 0, 0, 0, 0, 0, 0, 0, 0], // level 0, unused
+    [2, 0, 0, 0, 0, 0, 0, 0, 0],
+    [3, 0, 0, 0, 0, 0, 0, 0, 0],
+    [4, 2, 0, 0, 0, 0, 0, 0, 0],
+    [4, 3, 0, 0, 0, 0, 0, 0, 0],
+    [4, 3, 2, 0, 0, 0, 0, 0, 0],
+    [4, 3, 3, 0, 0, 0, 0, 0, 0],
+    [4, 3, 3, 1, 0, 0, 0, 0, 0],
+    [4, 3, 3, 2, 0, 0, 0, 0, 0],
+    [4, 3, 3, 3, 1, 0, 0, 0, 0],
+    [4, 3, 3, 3, 2, 0, 0, 0, 0],
+    [4, 3, 3, 3, 2, 1, 0, 0, 0],
+    [4, 3, 3, 3, 2, 1, 0, 0, 0],
+    [4, 3, 3, 3, 2, 1, 1, 0, 0],
+    [4, 3, 3, 3, 2, 1, 1, 0, 0],
+    [4, 3, 3, 3, 2, 1, 1, 1, 0],
+    [4, 3, 3, 3, 2, 1, 1, 1, 0],
+    [4, 3, 3, 3, 2, 1, 1, 1, 1],
+    [4, 3, 3, 3, 3, 1, 1, 1, 1],
+    [4, 3, 3, 3, 3, 2, 1, 1, 1],
+    [4, 3, 3, 3, 3, 2, 2, 1, 1],
+];
+
+/// Warlock Pact Magic: (slots, slot level) by Warlock level. A separate pool
+/// from everything above, and — the part people forget — it comes back on a
+/// **short** rest.
+pub const PACT_MAGIC: [(u8, u8); 21] = [
+    (0, 0), // level 0, unused
+    (1, 1), (2, 1), (2, 2), (2, 2), (2, 3), (2, 3), (2, 4), (2, 4), (2, 5), (2, 5),
+    (3, 5), (3, 5), (3, 5), (3, 5), (3, 5), (3, 5), (4, 5), (4, 5), (4, 5), (4, 5),
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CasterKind {
+    None,
+    Full,
+    Half,
+    Third,
+    Pact,
+}
+
+/// Which progression a class uses. Third casters are a property of the
+/// subclass, not the class, so both are needed.
+pub fn caster_kind(class: &str, subclass: &str) -> CasterKind {
+    let sub = subclass.to_lowercase();
+    if sub.contains("eldritch knight") || sub.contains("arcane trickster") {
+        return CasterKind::Third;
+    }
+    match class.to_lowercase().as_str() {
+        "bard" | "cleric" | "druid" | "sorcerer" | "wizard" => CasterKind::Full,
+        "paladin" | "ranger" => CasterKind::Half,
+        "warlock" => CasterKind::Pact,
+        _ => CasterKind::None,
+    }
+}
+
+/// A class's contribution to the caster level.
+///
+/// SRD 5.2.1: "All your levels in the Bard, Cleric, Druid, Sorcerer, and
+/// Wizard classes" plus "Half your levels (**round up**) in the Paladin and
+/// Ranger classes."
+///
+/// Round up is the 2024 rule and a change from 2014, which rounded down. It
+/// also means single-class and multiclass share one rounding — a level 3
+/// Paladin is caster level 2 either way — so there is one code path rather
+/// than two.
+///
+/// Third casters are not in the SRD at all: Eldritch Knight and Arcane
+/// Trickster are among the subclasses it omits. They follow the same shape at
+/// a third, rounded up, and are supported because a real character's payload
+/// will name the subclass even though the SRD does not describe it. That
+/// branch is the one thing here not pinned to extracted text.
+pub fn caster_level_contribution(kind: CasterKind, level: i32) -> i32 {
+    let level = level.max(0);
+    match kind {
+        CasterKind::Full => level,
+        CasterKind::Half => (level + 1) / 2,
+        CasterKind::Third => (level + 2) / 3,
+        CasterKind::None | CasterKind::Pact => 0,
+    }
+}
+
+/// Combined caster level, single-class or not.
+pub fn caster_level(classes: &[(CasterKind, i32)]) -> i32 {
+    classes
+        .iter()
+        .map(|(kind, level)| caster_level_contribution(*kind, *level))
+        .sum::<i32>()
+        .clamp(0, 20)
+}
+
+/// Slots for a whole character.
+pub fn spell_slots(classes: &[(CasterKind, i32)]) -> [u8; 9] {
+    FULL_CASTER_SLOTS[caster_level(classes) as usize]
+}
+
+/// Convenience for one class on its own.
+pub fn single_class_slots(kind: CasterKind, level: i32) -> [u8; 9] {
+    spell_slots(&[(kind, level)])
+}
+
+/// Warlock slots: how many, and what level they are cast at.
+pub fn pact_slots(warlock_level: i32) -> (u8, u8) {
+    PACT_MAGIC[warlock_level.clamp(0, 20) as usize]
+}
+
+/// "The DC equals 10 or half the damage taken (round down), whichever number
+/// is higher."
+pub fn concentration_dc(damage: i32) -> i32 {
+    10.max(damage / 2)
+}

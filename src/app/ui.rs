@@ -21,7 +21,10 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     // conditions or death saves. Twenty-two rows is too few to reserve space
     // for a line that is usually blank.
     let mut status_h = 2;
-    if !app.session.condition_summary().is_empty() || app.is_dying() {
+    if !app.session.condition_summary().is_empty()
+        || app.is_dying()
+        || app.session.concentrating_on.is_some()
+    {
         status_h += 1;
     }
     if app.last_roll().is_some() {
@@ -38,6 +41,16 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     draw_status(f, app, status);
     draw_tabs(f, app, tabs);
     app.page_rows = body.height.saturating_sub(2).max(1) as usize;
+
+    // The SPELLS tab gets a slot bar above its list. It only appears for a
+    // character who has slots, so a Rogue pays nothing for it.
+    let body = if app.tab == Tab::Spells && app.mode == Mode::List && !app.slots().is_empty() {
+        let [bar, rest] = Layout::vertical([Constraint::Length(1), Constraint::Min(1)]).areas(body);
+        draw_slot_bar(f, app, bar);
+        rest
+    } else {
+        body
+    };
 
     match app.mode {
         Mode::RollLog => draw_roll_log(f, app, body),
@@ -152,6 +165,22 @@ fn draw_status(f: &mut Frame, app: &App, area: Rect) {
                 third.push(Span::styled("  STABLE", theme::bright()));
             }
         }
+        // The owed save comes first: it is the thing that expires.
+        if let Some((spell, dc)) = app.pending_concentration() {
+            if !third.is_empty() {
+                third.push(Span::styled("   ", theme::base()));
+            }
+            third.push(Span::styled(
+                format!("CON save DC {dc} or lose {spell}"),
+                theme::danger(),
+            ));
+        } else if let Some(spell) = &app.session.concentrating_on {
+            if !third.is_empty() {
+                third.push(Span::styled("   ", theme::base()));
+            }
+            third.push(Span::styled(format!("concentrating: {spell}"), theme::dim()));
+        }
+
         let conditions = app.session.condition_summary();
         if !conditions.is_empty() {
             if !third.is_empty() {
@@ -481,6 +510,9 @@ fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
         Mode::List if app.is_dying() => {
             "s success   f fail   h heal   c conditions   esc".to_string()
         }
+        Mode::List if app.tab == Tab::Spells && app.selected_row().is_some_and(|r| r.spell.is_some()) => {
+            "C cast   ↵ detail   / find   X drop concentration".to_string()
+        }
         Mode::List if app.selected_has_damage() => {
             "↵ attack   D damage   a adv   z dis   v detail   / find".to_string()
         }
@@ -493,11 +525,12 @@ fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
         Mode::List => "d dmg  h heal  t temp  c cond  r rest  o scores  q quit".to_string(),
     };
 
-    // Feedback first: having just pressed undo, what it reversed matters more
-    // than the keymap you already know.
-    let left = match app.undo_note {
-        Some(what) => format!("undid {what}"),
-        None => left,
+    // Feedback first: a refusal or a confirmation matters more than the keymap
+    // you already know.
+    let left = match (&app.notice, app.undo_note) {
+        (Some(n), _) => n.clone(),
+        (None, Some(what)) => format!("undid {what}"),
+        _ => left,
     };
 
     let right = if app.is_list_tab() && matches!(app.mode, Mode::List | Mode::Filter) {
@@ -524,6 +557,7 @@ fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
             Span::styled(
                 left,
                 match app.mode {
+                    _ if app.notice.is_some() => theme::danger(),
                     _ if app.undo_note.is_some() => theme::bright(),
                     Mode::Filter | Mode::Number(_) => theme::bright(),
                     Mode::List if app.is_dying() => theme::danger(),
@@ -730,6 +764,34 @@ fn draw_abilities(f: &mut Frame, app: &App, area: Rect) {
     ));
 
     f.render_widget(Paragraph::new(lines), inner);
+}
+
+fn draw_slot_bar(f: &mut Frame, app: &App, area: Rect) {
+    let mut spans: Vec<Span> = vec![Span::styled("SLOTS ", theme::dim())];
+    for (level, left, max) in app.slots() {
+        let style = if left == 0 { theme::dim() } else { theme::bright() };
+        spans.push(Span::styled(format!("{level}:"), theme::dim()));
+        spans.push(Span::styled(
+            format!(
+                "{}{} ",
+                "●".repeat(left as usize),
+                "○".repeat((max as u32).saturating_sub(left) as usize)
+            ),
+            style,
+        ));
+    }
+    if let Some((left, max, level)) = app.pact() {
+        spans.push(Span::styled(format!("  PACT L{level}:"), theme::dim()));
+        spans.push(Span::styled(
+            format!(
+                "{}{}",
+                "●".repeat(left as usize),
+                "○".repeat((max as u32).saturating_sub(left) as usize)
+            ),
+            if left == 0 { theme::dim() } else { theme::bright() },
+        ));
+    }
+    f.render_widget(Paragraph::new(Line::from(spans)).style(theme::base()), area);
 }
 
 fn draw_load(f: &mut Frame, app: &App, area: Rect) {

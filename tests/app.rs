@@ -864,7 +864,7 @@ fn you_cannot_rest_at_zero_hit_points() {
     press(&mut a, KeyCode::Char('r'));
     press(&mut a, KeyCode::Char('l'));
     assert_eq!(a.current_hp(), 0, "a long rest at 0 hp should be refused");
-    assert!(a.last_error.is_some(), "the refusal should be explained");
+    assert!(a.notice.is_some(), "the refusal should be explained");
     assert_eq!(a.mode, Mode::List);
 }
 
@@ -1176,4 +1176,184 @@ fn a_new_keystroke_clears_the_undo_confirmation() {
     assert!(a.undo_note.is_some());
     press(&mut a, KeyCode::Char('j'));
     assert!(a.undo_note.is_none(), "the note should not linger");
+}
+
+// -- spellcasting ----------------------------------------------------------
+
+fn caster() -> App {
+    let ch: Character =
+        serde_json::from_str(include_str!("fixtures/srd_cleric.json")).expect("cleric fixture");
+    let sheet = derive(&ch);
+    let path = std::env::temp_dir().join(format!("vellum-caster-{}.json", std::process::id()));
+    let session = Session::seed(ch.id, 0, 0, false);
+    App::new(sheet, ch, session, path, None).with_seed(0xCA57)
+}
+
+fn select_spell(a: &mut App, name: &str) {
+    go(a, Tab::Spells);
+    press(a, KeyCode::Char('/'));
+    typed(a, name);
+    press(a, KeyCode::Enter);
+}
+
+#[test]
+fn casting_spends_a_slot_of_the_spells_level() {
+    let mut a = caster();
+    assert_eq!(a.slots(), vec![(1, 4, 4), (2, 3, 3), (3, 2, 2)]);
+
+    select_spell(&mut a, "spiritual"); // a level 2 spell
+    press(&mut a, KeyCode::Char('C'));
+    assert_eq!(
+        a.slots(),
+        vec![(1, 4, 4), (2, 2, 3), (3, 2, 2)],
+        "a level 2 slot should go, and only that"
+    );
+}
+
+#[test]
+fn a_cantrip_costs_nothing() {
+    let mut a = caster();
+    select_spell(&mut a, "sacred");
+    press(&mut a, KeyCode::Char('C'));
+    assert_eq!(a.slots(), vec![(1, 4, 4), (2, 3, 3), (3, 2, 2)]);
+}
+
+#[test]
+fn casting_with_no_slot_left_refuses_and_says_so() {
+    let mut a = caster();
+    select_spell(&mut a, "spiritual");
+    for _ in 0..3 {
+        press(&mut a, KeyCode::Char('C'));
+    }
+    assert_eq!(a.slots()[1], (2, 0, 3), "all three level 2 slots spent");
+
+    press(&mut a, KeyCode::Char('C'));
+    assert_eq!(a.slots()[1], (2, 0, 3), "must not go negative");
+    assert!(a.notice.is_some(), "the refusal should be explained");
+}
+
+#[test]
+fn casting_a_concentration_spell_takes_up_concentration() {
+    let mut a = caster();
+    select_spell(&mut a, "bless");
+    press(&mut a, KeyCode::Char('C'));
+    assert_eq!(a.session.concentrating_on.as_deref(), Some("Bless"));
+
+    press(&mut a, KeyCode::Char('X'));
+    assert!(a.session.concentrating_on.is_none());
+}
+
+#[test]
+fn a_second_concentration_spell_ends_the_first_and_says_which() {
+    // "You lose Concentration on an effect the moment you start casting a
+    // spell that requires Concentration."
+    let mut a = caster();
+    select_spell(&mut a, "bless");
+    press(&mut a, KeyCode::Char('C'));
+
+    a.session.concentrate_on("Hold Person");
+    assert_eq!(a.session.concentrating_on.as_deref(), Some("Hold Person"));
+
+    select_spell(&mut a, "bless");
+    press(&mut a, KeyCode::Char('C'));
+    assert_eq!(a.session.concentrating_on.as_deref(), Some("Bless"));
+    assert!(
+        a.notice.as_deref().is_some_and(|n| n.contains("Hold Person")),
+        "the player should be told what was dropped: {:?}",
+        a.notice
+    );
+}
+
+#[test]
+fn taking_damage_while_concentrating_works_out_the_save() {
+    // The app knows the damage because it just applied it.
+    let mut a = caster();
+    select_spell(&mut a, "bless");
+    press(&mut a, KeyCode::Char('C'));
+
+    press(&mut a, KeyCode::Char('d'));
+    typed(&mut a, "9");
+    press(&mut a, KeyCode::Enter);
+    let (spell, dc) = a.pending_concentration().expect("a save should be owed");
+    assert_eq!(spell, "Bless");
+    assert_eq!(dc, 10, "half of 9 rounds down to 4, so the floor of 10 applies");
+
+    press(&mut a, KeyCode::Char('d'));
+    typed(&mut a, "30");
+    press(&mut a, KeyCode::Enter);
+    assert_eq!(a.pending_concentration().unwrap().1, 15, "half of 30");
+}
+
+#[test]
+fn no_save_is_owed_when_not_concentrating() {
+    let mut a = caster();
+    press(&mut a, KeyCode::Char('d'));
+    typed(&mut a, "30");
+    press(&mut a, KeyCode::Enter);
+    assert!(a.pending_concentration().is_none());
+}
+
+#[test]
+fn a_long_rest_restores_slots_and_a_short_rest_does_not() {
+    let mut a = caster();
+    select_spell(&mut a, "spiritual");
+    press(&mut a, KeyCode::Char('C'));
+    press(&mut a, KeyCode::Char('C'));
+    assert_eq!(a.slots()[1], (2, 1, 3));
+
+    press(&mut a, KeyCode::Char('r'));
+    press(&mut a, KeyCode::Char('s')); // short rest
+    press(&mut a, KeyCode::Esc);
+    assert_eq!(a.slots()[1], (2, 1, 3), "ordinary slots survive a short rest");
+
+    press(&mut a, KeyCode::Char('r'));
+    press(&mut a, KeyCode::Char('l')); // long rest
+    assert_eq!(a.slots()[1], (2, 3, 3), "and come back on a long one");
+}
+
+#[test]
+fn a_long_rest_ends_concentration() {
+    // You sleep through it, which means the Unconscious condition.
+    let mut a = caster();
+    select_spell(&mut a, "bless");
+    press(&mut a, KeyCode::Char('C'));
+    press(&mut a, KeyCode::Char('r'));
+    press(&mut a, KeyCode::Char('l'));
+    assert!(a.session.concentrating_on.is_none());
+}
+
+#[test]
+fn casting_can_be_undone() {
+    let mut a = caster();
+    select_spell(&mut a, "bless");
+    press(&mut a, KeyCode::Char('C'));
+    assert_eq!(a.slots()[0], (1, 3, 4));
+    assert!(a.session.concentrating_on.is_some());
+
+    undo(&mut a);
+    assert_eq!(a.slots()[0], (1, 4, 4), "the slot should come back");
+    assert!(a.session.concentrating_on.is_none());
+}
+
+#[test]
+fn a_character_with_no_slots_shows_none() {
+    let a = seeded();
+    assert!(a.slots().is_empty());
+    assert!(a.pact().is_none());
+}
+
+#[test]
+fn pressing_slash_again_starts_a_fresh_search() {
+    // It used to keep the old text, so typing appended and matched nothing.
+    let mut a = seeded();
+    go(&mut a, Tab::Feats);
+    press(&mut a, KeyCode::Char('/'));
+    typed(&mut a, "sneak");
+    press(&mut a, KeyCode::Enter);
+    assert_eq!(a.filter, "sneak");
+
+    press(&mut a, KeyCode::Char('/'));
+    typed(&mut a, "alert");
+    assert_eq!(a.filter, "alert", "the previous search should not linger");
+    assert!(!a.rows().is_empty(), "a doubled filter would match nothing");
 }

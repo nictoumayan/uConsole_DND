@@ -64,6 +64,16 @@ pub struct Session {
     #[serde(default)]
     pub ability_overrides: BTreeMap<String, i32>,
 
+    /// Spell slots expended, indexed 0..9 for slot levels 1..9.
+    #[serde(default)]
+    pub slots_used: [u32; 9],
+    /// Pact Magic slots expended. Its own pool, restored by a **short** rest.
+    #[serde(default)]
+    pub pact_used: u32,
+    /// The spell currently being concentrated on, if any.
+    #[serde(default)]
+    pub concentrating_on: Option<String>,
+
     /// Hit Point Dice spent, keyed by die size ("d8"). A multiclass character
     /// keeps its pools apart.
     #[serde(default)]
@@ -111,6 +121,9 @@ impl Session {
             death_failures: 0,
             inspiration,
             ability_overrides: BTreeMap::new(),
+            slots_used: [0; 9],
+            pact_used: 0,
+            concentrating_on: None,
             hit_dice_used: BTreeMap::new(),
             uses: BTreeMap::new(),
         }
@@ -271,6 +284,50 @@ impl Session {
         self.ability_overrides.remove(abbrev);
     }
 
+    // -- spell slots -------------------------------------------------------
+
+    pub fn slots_left(&self, level: usize, max: u8) -> u32 {
+        (max as u32).saturating_sub(self.slots_used.get(level).copied().unwrap_or(0))
+    }
+
+    pub fn spend_slot(&mut self, level: usize, max: u8) -> bool {
+        if level >= 9 || self.slots_left(level, max) == 0 {
+            return false;
+        }
+        self.slots_used[level] += 1;
+        true
+    }
+
+    pub fn restore_slot(&mut self, level: usize) {
+        if level < 9 {
+            self.slots_used[level] = self.slots_used[level].saturating_sub(1);
+        }
+    }
+
+    pub fn pact_left(&self, max: u8) -> u32 {
+        (max as u32).saturating_sub(self.pact_used)
+    }
+
+    pub fn spend_pact(&mut self, max: u8) -> bool {
+        if self.pact_left(max) == 0 {
+            return false;
+        }
+        self.pact_used += 1;
+        true
+    }
+
+    // -- concentration -----------------------------------------------------
+
+    /// Starting a second Concentration spell ends the first. Returns what was
+    /// dropped, so the player is told rather than quietly losing it.
+    pub fn concentrate_on(&mut self, spell: &str) -> Option<String> {
+        self.concentrating_on.replace(spell.to_string())
+    }
+
+    pub fn stop_concentrating(&mut self) -> Option<String> {
+        self.concentrating_on.take()
+    }
+
     // -- hit dice ----------------------------------------------------------
 
     pub fn hit_dice_used(&self, die: &str) -> u32 {
@@ -327,6 +384,9 @@ impl Session {
     /// spent deliberately during the rest, not restored by it.
     pub fn short_rest(&mut self) {
         self.uses.retain(|_, e| e.reset != "short rest");
+        // Pact Magic is the pool that comes back on a short rest. Ordinary
+        // spell slots do not, which is the whole point of the distinction.
+        self.pact_used = 0;
     }
 
     /// Full hit points, no temporary pool, death saves cleared, one level of
@@ -340,6 +400,11 @@ impl Session {
         // Everything recharges. A long rest spans dawn in all but contrived
         // cases, and anything it should not have restored can be re-spent.
         self.uses.clear();
+        self.slots_used = [0; 9];
+        self.pact_used = 0;
+        // Sleeping through a Long Rest means the Unconscious condition, which
+        // ends Concentration.
+        self.concentrating_on = None;
         // "You regain all lost Hit Points and all spent Hit Point Dice."
         // The 2024 rules restore the whole pool; the 2014 rules restored half,
         // which is the version most people remember.
@@ -372,6 +437,10 @@ impl Session {
             "exhaustion"
         } else if before.uses != after.uses {
             "a limited use"
+        } else if before.slots_used != after.slots_used || before.pact_used != after.pact_used {
+            "a spell slot"
+        } else if before.concentrating_on != after.concentrating_on {
+            "concentration"
         } else if before.hit_dice_used != after.hit_dice_used {
             "hit dice"
         } else if before.ability_overrides != after.ability_overrides {

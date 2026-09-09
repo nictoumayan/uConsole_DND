@@ -79,8 +79,14 @@ pub struct App {
     /// Cursor in the conditions overlay. Index `CONDITIONS.len()` is the
     /// exhaustion row, which is a counter rather than a toggle.
     pub condition_cursor: usize,
-    /// Surfaced in the footer. A save that fails silently is a session lost.
+    /// A persistence failure. Rendered as a marker in the header, because a
+    /// save that fails silently is a session lost.
     pub last_error: Option<String>,
+    /// Something to tell the player: a refused action, a dropped
+    /// concentration. Kept separate from `last_error` because `persist` clears
+    /// that one on every success, which used to swallow these entirely — they
+    /// were set and never shown.
+    pub notice: Option<String>,
 
     // -- dice --------------------------------------------------------------
     rng: Rng,
@@ -91,6 +97,8 @@ pub struct App {
     pub dice_error: Option<String>,
     /// Cursor in the ability-override overlay.
     pub ability_cursor: usize,
+    /// DC of a Constitution save owed for Concentration after taking damage.
+    pub concentration_dc: Option<i32>,
     /// Which hit dice pool the short-rest screen is spending from.
     pub hit_die_cursor: usize,
     /// Hit points regained so far this short rest.
@@ -152,11 +160,13 @@ impl App {
             number_buffer: String::new(),
             condition_cursor: 0,
             last_error: None,
+            notice: None,
             rng: Rng::from_entropy(),
             rolls: Vec::new(),
             dice_buffer: String::new(),
             dice_error: None,
             ability_cursor: 0,
+            concentration_dc: None,
             hit_die_cursor: 0,
             rest_healed: 0,
             last_resolution: Vec::new(),
@@ -489,6 +499,81 @@ impl App {
         self.persist();
     }
 
+    // -- spellcasting ------------------------------------------------------
+
+    /// Slot maxima and what is left of each, for the SPELLS header.
+    pub fn slots(&self) -> Vec<(usize, u32, u8)> {
+        let Some(sc) = &self.sheet.spellcasting else { return Vec::new() };
+        sc.slots
+            .iter()
+            .enumerate()
+            .filter(|(_, max)| **max > 0)
+            .map(|(i, max)| (i + 1, self.session.slots_left(i, *max), *max))
+            .collect()
+    }
+
+    pub fn pact(&self) -> Option<(u32, u8, u8)> {
+        let (max, level) = self.sheet.spellcasting.as_ref()?.pact?;
+        Some((self.session.pact_left(max), max, level))
+    }
+
+    /// Cast the selected spell: spend a slot of its level, and take up
+    /// Concentration if it needs it.
+    ///
+    /// Cantrips cost nothing, so casting one only touches Concentration.
+    pub fn cast_selected(&mut self) {
+        let Some(row) = self.selected_row() else { return };
+        let Some(spell) = row.spell.clone() else { return };
+
+        if spell.level > 0 {
+            let Some(sc) = self.sheet.spellcasting.clone() else { return };
+            let idx = spell.level - 1;
+            let max = sc.slots.get(idx).copied().unwrap_or(0);
+
+            // Fall back to Pact Magic when the ordinary pool is empty or the
+            // character only has pact slots to begin with.
+            let ordinary = max > 0 && self.session.slots_left(idx, max) > 0;
+            let pact_fits = sc
+                .pact
+                .map(|(pmax, plevel)| {
+                    plevel as usize >= spell.level && self.session.pact_left(pmax) > 0
+                })
+                .unwrap_or(false);
+
+            if ordinary {
+                self.session.spend_slot(idx, max);
+            } else if pact_fits {
+                let (pmax, _) = sc.pact.unwrap();
+                self.session.spend_pact(pmax);
+            } else {
+                self.notice = Some(format!("no level {} slot left", spell.level));
+                return;
+            }
+        }
+
+        if spell.concentration {
+            if let Some(dropped) = self.session.concentrate_on(&row.name) {
+                if dropped != row.name {
+                    self.notice = Some(format!("concentration on {dropped} ended"));
+                }
+            }
+        }
+        self.persist();
+    }
+
+    pub fn stop_concentrating(&mut self) {
+        self.session.stop_concentrating();
+        self.persist();
+    }
+
+    /// The Constitution save owed after taking damage while concentrating.
+    /// Set when damage lands, cleared when the save is resolved either way.
+    pub fn pending_concentration(&self) -> Option<(String, i32)> {
+        let spell = self.session.concentrating_on.clone()?;
+        let dc = self.concentration_dc?;
+        Some((spell, dc))
+    }
+
     // -- limited uses ------------------------------------------------------
 
     /// Spend one use of whatever the cursor is on. Silently does nothing on a
@@ -559,7 +644,14 @@ impl App {
         let amount: i32 = self.number_buffer.parse().unwrap_or(0);
         let max = self.max_hp();
         match target {
-            NumberTarget::Damage => self.session.take_damage(amount, max),
+            NumberTarget::Damage => {
+                self.session.take_damage(amount, max);
+                // The app knows the damage because it just applied it, so it
+                // can work out the save rather than leaving it to be forgotten.
+                if self.session.concentrating_on.is_some() && amount > 0 {
+                    self.concentration_dc = Some(rules::concentration_dc(amount));
+                }
+            }
             NumberTarget::Heal => self.session.heal(amount, max),
             NumberTarget::TempHp => self.session.set_temp_hp(amount),
         }
@@ -628,7 +720,7 @@ impl App {
 
     pub fn rest(&mut self, long: bool) {
         if !self.can_rest() {
-            self.last_error = Some("you need at least 1 hit point to rest".into());
+            self.notice = Some("you need at least 1 hit point to rest".into());
             self.mode = Mode::List;
             return;
         }
@@ -643,7 +735,6 @@ impl App {
             self.rest_healed = 0;
             self.mode = Mode::ShortRest;
         }
-        self.last_error = None;
         self.persist();
     }
 
@@ -789,6 +880,10 @@ impl App {
 
     pub fn start_filter(&mut self) {
         if self.is_list_tab() {
+            // A fresh search, not a continuation. Pressing `/` on a tab that
+            // was already filtered and typing again appended to the old text,
+            // which silently matched nothing.
+            self.filter.clear();
             self.mode = Mode::Filter;
         }
     }

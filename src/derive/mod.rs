@@ -136,6 +136,14 @@ pub struct Spellcasting {
     pub ability: Ability,
     pub save_dc: i32,
     pub attack_bonus: i32,
+    /// Maxima by slot level, index 0 being level 1. The payload ships these as
+    /// zero, exactly like armour class and proficiency bonus, so they come
+    /// from the class tables.
+    pub slots: [u8; 9],
+    /// Warlock only: (slots, the level they are cast at). Its own pool, and it
+    /// comes back on a short rest.
+    pub pact: Option<(u8, u8)>,
+    pub caster_level: i32,
 }
 
 impl Sheet {
@@ -438,17 +446,47 @@ fn title_case(slug: &str) -> String {
 }
 
 fn derive_spellcasting(ch: &Character, pb: i32, scores: &[Score; 6]) -> Option<Spellcasting> {
-    // 1=STR .. 6=CHA, the same ordering as `stats`.
+    use crate::rules::{caster_kind, CasterKind};
+
+    let kinds: Vec<(CasterKind, i32)> = ch
+        .classes
+        .iter()
+        .map(|c| {
+            let sub = c.subclass_definition.as_ref().map(|s| s.name.as_str()).unwrap_or("");
+            (caster_kind(&c.definition.name, sub), c.level)
+        })
+        .collect();
+
+    let slots = crate::rules::spell_slots(&kinds);
+    let pact = kinds
+        .iter()
+        .find(|(k, _)| *k == CasterKind::Pact)
+        .map(|(_, level)| crate::rules::pact_slots(*level))
+        .filter(|(n, _)| *n > 0);
+
+    // Nothing to report for a character with no magic at all.
+    if slots.iter().all(|n| *n == 0) && pact.is_none() {
+        return None;
+    }
+
+    // 1=STR .. 6=CHA, the same ordering as `stats`. On a multiclass caster the
+    // payload names one per class; the first is used for the headline DC, and
+    // an individual spell carries its own casting ability if it differs.
     let id = ch
         .classes
         .iter()
-        .find_map(|c| c.definition.spell_casting_ability_id)?;
-    let ability = *Ability::ALL.get((id - 1).max(0) as usize)?;
+        .find_map(|c| c.definition.spell_casting_ability_id)
+        .unwrap_or(6);
+    let ability = *Ability::ALL.get((id - 1).clamp(0, 5) as usize)?;
     let m = scores[ability.index()].modifier;
+
     Some(Spellcasting {
         ability,
         save_dc: crate::rules::spell_save_dc(pb, m),
         attack_bonus: crate::rules::spell_attack_bonus(pb, m),
+        slots,
+        pact,
+        caster_level: crate::rules::caster_level(&kinds),
     })
 }
 

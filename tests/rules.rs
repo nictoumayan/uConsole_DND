@@ -340,3 +340,114 @@ fn weapon_proficiency_comes_from_category_or_name() {
     assert!(weapon_proficient(2, "rapier", &named), "and case-insensitively");
     assert!(!weapon_proficient(2, "Greatsword", &named));
 }
+
+// -- spellcasting ----------------------------------------------------------
+
+#[test]
+fn half_caster_slots_match_the_paladin_table() {
+    // The only slot table encoded is the full-caster one. This pins the
+    // derivation against the Paladin table's real numbers, extracted from the
+    // SRD PDF — if the derivation were wrong, every Paladin would be wrong.
+    let paladin: [(i32, [u8; 5]); 20] = [
+        (1, [2, 0, 0, 0, 0]),   (2, [2, 0, 0, 0, 0]),
+        (3, [3, 0, 0, 0, 0]),   (4, [3, 0, 0, 0, 0]),
+        (5, [4, 2, 0, 0, 0]),   (6, [4, 2, 0, 0, 0]),
+        (7, [4, 3, 0, 0, 0]),   (8, [4, 3, 0, 0, 0]),
+        (9, [4, 3, 2, 0, 0]),   (10, [4, 3, 2, 0, 0]),
+        (11, [4, 3, 3, 0, 0]),  (12, [4, 3, 3, 0, 0]),
+        (13, [4, 3, 3, 1, 0]),  (14, [4, 3, 3, 1, 0]),
+        (15, [4, 3, 3, 2, 0]),  (16, [4, 3, 3, 2, 0]),
+        (17, [4, 3, 3, 3, 1]),  (18, [4, 3, 3, 3, 1]),
+        (19, [4, 3, 3, 3, 2]),  (20, [4, 3, 3, 3, 2]),
+    ];
+    for (level, expected) in paladin {
+        let got = single_class_slots(CasterKind::Half, level);
+        assert_eq!(&got[..5], &expected[..], "Paladin {level}");
+        assert_eq!(&got[5..], &[0u8; 4], "a half caster has no slots above 5th");
+    }
+}
+
+#[test]
+fn half_levels_round_up_in_a_multiclass_too() {
+    // "Half your levels (round up) in the Paladin and Ranger classes." Round
+    // up is the 2024 rule; 2014 rounded down. Because both roundings agree,
+    // a level 3 Paladin is caster level 2 whether or not they multiclass.
+    assert_eq!(caster_level(&[(CasterKind::Half, 3)]), 2);
+    assert_eq!(single_class_slots(CasterKind::Half, 3)[0], 3);
+    assert_eq!(spell_slots(&[(CasterKind::Half, 3)]), spell_slots(&[(CasterKind::Full, 2)]));
+}
+
+#[test]
+fn the_srd_multiclass_example_works_out() {
+    // "if you are a level 4 Ranger / level 3 Sorcerer, you count as a level 5
+    // character... you have four level 1 spell slots, three level 2 slots"
+    let classes = [(CasterKind::Half, 4), (CasterKind::Full, 3)];
+    assert_eq!(caster_level(&classes), 5);
+    let slots = spell_slots(&classes);
+    assert_eq!(slots[0], 4);
+    assert_eq!(slots[1], 3);
+    assert_eq!(slots[2], 2);
+}
+
+#[test]
+fn a_third_caster_contributes_a_third_rounded_up() {
+    // Eldritch Knight and Arcane Trickster are not in SRD 5.2.1 — it ships one
+    // subclass per class and omits both — so this branch follows the same
+    // shape as the half-caster rule rather than extracted text.
+    assert_eq!(caster_level(&[(CasterKind::Third, 3)]), 1);
+    assert_eq!(caster_level(&[(CasterKind::Third, 4)]), 2);
+    assert_eq!(caster_level(&[(CasterKind::Third, 7)]), 3);
+    assert_eq!(single_class_slots(CasterKind::Third, 3)[0], 2, "two level 1 slots at Fighter 3");
+}
+
+#[test]
+fn caster_kind_reads_the_subclass_for_third_casters() {
+    assert_eq!(caster_kind("Wizard", ""), CasterKind::Full);
+    assert_eq!(caster_kind("Paladin", "Oath of Devotion"), CasterKind::Half);
+    assert_eq!(caster_kind("Warlock", ""), CasterKind::Pact);
+    assert_eq!(caster_kind("Rogue", "Assassin"), CasterKind::None);
+    // A third caster is a property of the subclass, not the class.
+    assert_eq!(caster_kind("Rogue", "Arcane Trickster"), CasterKind::Third);
+    assert_eq!(caster_kind("Fighter", "Eldritch Knight"), CasterKind::Third);
+}
+
+#[test]
+fn a_non_caster_has_no_slots() {
+    assert_eq!(spell_slots(&[(CasterKind::None, 8)]), [0; 9]);
+    assert_eq!(spell_slots(&[]), [0; 9]);
+}
+
+#[test]
+fn pact_magic_is_its_own_small_pool() {
+    assert_eq!(pact_slots(1), (1, 1));
+    assert_eq!(pact_slots(2), (2, 1));
+    assert_eq!(pact_slots(5), (2, 3));
+    assert_eq!(pact_slots(11), (3, 5));
+    assert_eq!(pact_slots(17), (4, 5));
+    assert_eq!(pact_slots(20), (4, 5));
+    // And it is not part of the ordinary slot pool.
+    assert_eq!(spell_slots(&[(CasterKind::Pact, 5)]), [0; 9]);
+}
+
+#[test]
+fn slot_levels_never_exceed_the_table() {
+    for level in 0..=25 {
+        for kind in [CasterKind::Full, CasterKind::Half, CasterKind::Third] {
+            let s = single_class_slots(kind, level);
+            assert!(s.iter().all(|n| *n <= 4), "level {level} {kind:?} gave {s:?}");
+        }
+        let _ = pact_slots(level);
+    }
+}
+
+#[test]
+fn concentration_dc_is_ten_or_half_the_damage() {
+    // "The DC equals 10 or half the damage taken (round down), whichever
+    // number is higher."
+    assert_eq!(concentration_dc(0), 10);
+    assert_eq!(concentration_dc(19), 10, "half of 19 rounds down to 9");
+    assert_eq!(concentration_dc(20), 10);
+    assert_eq!(concentration_dc(21), 10, "half of 21 rounds down to 10");
+    assert_eq!(concentration_dc(22), 11);
+    assert_eq!(concentration_dc(50), 25);
+}

@@ -77,7 +77,7 @@ dice really came up what they came up.
 
 ---
 
-## 3. Spell slots and Concentration
+## 3. Spell slots and Concentration — DONE
 
 **The largest functional gap. Three or four evenings.**
 
@@ -113,9 +113,10 @@ armour class and proficiency bonus. They have to come from class tables.
 
 ---
 
-## 4. A caster and a multiclass fixture
+## 4. A caster and a multiclass fixture — DONE
 
-**One evening. Do it alongside 3, not after.**
+**Done first, so the slot work had something to test against from its first
+line.**
 
 Everything is tested against one single-class Rogue. That leaves whole branches
 of the derive layer unexercised: Unarmored Defense (Barbarian, Monk), spell save

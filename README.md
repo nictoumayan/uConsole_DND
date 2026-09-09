@@ -173,6 +173,7 @@ play
   o              correct ability scores by hand
   L              load a character by URL
   ctrl-z         undo the last change
+  C              cast the selected spell     X    drop concentration
   u / U          spend / restore one limited use
   r              rest — short or long
                  short opens a screen: space spends one hit die at a time
@@ -397,6 +398,52 @@ The correction is deliberately made on the **score**, never on the derived
 value. One entry fixes everything downstream and stays correct as the character
 levels; six patches on six derived numbers would not.
 
+## Spellcasting
+
+Slot maxima come from the class tables, because the payload ships
+`{"level": 1, "used": 0, "available": 0}` — zero, exactly like armour class and
+proficiency bonus.
+
+Only one table is encoded: the full-caster progression from the Multiclass
+Spellcaster table, which every full caster's own table repeats. Half and third
+casters derive from it, and that derivation is pinned against the Paladin
+table's real numbers for all twenty levels — if it were wrong, every Paladin
+would be wrong.
+
+One rule caught a mistake worth recording. SRD 5.2.1 says:
+
+> Half your levels (**round up**) in the Paladin and Ranger classes
+
+2014 rounded down. 2024 rounds up, which means single-class and multiclass share
+one rounding — a level 3 Paladin is caster level 2 either way — so there is one
+code path rather than the two the wrong rule required.
+
+Pact Magic is a separate pool at a fixed slot level, and it comes back on a
+**short** rest. Ordinary slots do not, which is the point of the distinction.
+
+Eldritch Knight and Arcane Trickster are supported but **not** SRD-backed: the
+SRD ships one subclass per class and omits both. That branch follows the same
+shape at a third, and is the one thing here not pinned to extracted text.
+
+### Concentration
+
+`C` casts the selected spell — spends a slot of its level, and takes up
+Concentration if the spell needs it. Starting a second Concentration spell ends
+the first, and says which.
+
+Then the part worth building the rest for. **Take damage while concentrating and
+the app works out the save:**
+
+```
+CON save DC 15 or lose Bless
+```
+
+> The DC equals 10 or half the damage taken (round down), whichever number is
+> higher.
+
+It knows the damage because it just applied it. Everyone forgets this save and
+nobody wants the arithmetic mid-fight.
+
 ## Undo
 
 `Ctrl-Z` reverses the last thing that changed, up to thirty steps back. Typing
@@ -483,7 +530,7 @@ aesthetic, not a defect.
 
 ## Testing
 
-218 tests, and the interaction model is the point of the architecture: `app/state.rs`
+246 tests, and the interaction model is the point of the architecture: `app/state.rs`
 and `app/keys.rs` depend on neither ratatui nor a terminal, so every key a player
 can press is exercised headlessly — selection memory across tabs, filter scoping,
 the escape ladder, clamping when a filter shrinks the list under the cursor.
@@ -557,6 +604,8 @@ truecolor ANSI instead.
       a long rest that restores the whole pool
 - [x] **Attacks** — weapon attacks and damage from structured payload data
 - [x] **Load by URL** — paste a character link into the app
+- [x] **Spell slots and Concentration** — class tables, Pact Magic, and a
+      Constitution save the app computes for you
 - [ ] **Phase 3** — session layer: HP, conditions, death saves, local overrides
 The snapshot is immutable and session state lives in a separate file, so
 re-importing after a level-up never clobbers HP you are tracking mid-combat.
